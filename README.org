@@ -76,6 +76,12 @@ A backend implements one function: =dispatch(command, args) -> value=. The runne
 each GUI command to the active backend. Adding a backend = implementing this
 interface; nothing in a nelisp program changes.
 
+Choosing a backend is the host's *only* backend-specific decision.
+=nelisp_gui_core::BackendKind= ({=Skia=, =Cairo=, =Canvas=}) names the choice, with
+=from_name= / =from_env= (=$NELISP_GUI_BACKEND=) so a shell can resolve it at
+startup — e.g. a native host maps =Cairo= → windowed GTK4 and =Skia= → headless
+PNG, a webview shell maps =Canvas=. A program never sees this.
+
 ** Backends
 
 - *Canvas-2D* (=backends/canvas/=, dependency-free ES-module JavaScript). A

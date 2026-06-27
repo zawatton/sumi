@@ -99,6 +99,39 @@ pub fn parse(name: &str, a: &[i32], text: Option<&str>) -> Option<Command> {
     })
 }
 
+/// Which backend a host should instantiate. Choosing a backend is the host's
+/// *only* backend-specific decision — a nelisp program emits the vocabulary and
+/// never names a backend. Native hosts pick [`BackendKind::Cairo`] (windowed) or
+/// [`BackendKind::Skia`] (headless PNG); a webview shell picks
+/// [`BackendKind::Canvas`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BackendKind {
+    /// Pure-Rust tiny-skia rasteriser — headless PNG, no system deps.
+    Skia,
+    /// Native Cairo/GTK4 — windowed, real Pango text.
+    Cairo,
+    /// HTML Canvas 2D — Electron / Tauri webview.
+    Canvas,
+}
+
+impl BackendKind {
+    /// Parse a backend name, case-insensitively. Accepts `skia`/`tiny-skia`,
+    /// `cairo`/`gtk4`/`gtk`, and `canvas`/`web`/`html`.
+    pub fn from_name(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "skia" | "tiny-skia" => Some(Self::Skia),
+            "cairo" | "gtk4" | "gtk" => Some(Self::Cairo),
+            "canvas" | "web" | "html" => Some(Self::Canvas),
+            _ => None,
+        }
+    }
+
+    /// The backend named by `$NELISP_GUI_BACKEND`, if set and recognised.
+    pub fn from_env() -> Option<Self> {
+        std::env::var("NELISP_GUI_BACKEND").ok().and_then(|v| Self::from_name(&v))
+    }
+}
+
 /// A small demo frame used by the spike to prove a backend renders the vocabulary.
 pub fn demo_frame() -> Vec<Command> {
     use Command::*;
@@ -116,4 +149,26 @@ pub fn demo_frame() -> Vec<Command> {
         DrawText { text: "nelisp-gui".to_string() },
         Present,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_accepts_both_name_families() {
+        assert!(matches!(parse("dtw-fill-rect", &[0, 0, 1, 1], None), Some(Command::FillRect { .. })));
+        assert!(matches!(parse("gui-fill-rect", &[0, 0, 1, 1], None), Some(Command::FillRect { .. })));
+        assert_eq!(parse("gui-draw-text", &[], Some("hi")), Some(Command::DrawText { text: "hi".into() }));
+        assert!(parse("not-a-command", &[], None).is_none());
+    }
+
+    #[test]
+    fn backend_kind_parses_names() {
+        assert_eq!(BackendKind::from_name("Cairo"), Some(BackendKind::Cairo));
+        assert_eq!(BackendKind::from_name(" GTK4 "), Some(BackendKind::Cairo));
+        assert_eq!(BackendKind::from_name("canvas"), Some(BackendKind::Canvas));
+        assert_eq!(BackendKind::from_name("tiny-skia"), Some(BackendKind::Skia));
+        assert_eq!(BackendKind::from_name("nope"), None);
+    }
 }
