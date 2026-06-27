@@ -1,0 +1,17 @@
+{
+  "name": "nelisp-input-web",
+  "version": "0.0.0",
+  "description": "Web (DOM) binding of the nelisp-input vocabulary — logical buttons + HSP-style stick",
+  "type": "module",
+  "license": "CC0-1.0",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  }
+}

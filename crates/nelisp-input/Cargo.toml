@@ -1,0 +1,11 @@
+# nelisp-input — backend-agnostic input vocabulary, the sibling of nelisp-gui.
+# Pure Rust, no system deps (a workspace member, tested by CI / scripts/check.sh).
+
+[package]
+name = "nelisp-input"
+version = "0.0.0"
+edition = "2021"
+description = "Backend-agnostic input vocabulary for nelisp (logical buttons, HSP-style stick, pointer)"
+license = "CC0-1.0"
+
+[dependencies]

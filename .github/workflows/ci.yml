@@ -41,3 +41,7 @@ jobs:
       - name: Canvas backend tests
         run: node --test
         working-directory: backends/canvas
+
+      - name: Input (web) tests
+        run: node --test
+        working-directory: backends/input

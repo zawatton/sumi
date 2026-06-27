@@ -4,6 +4,7 @@ members = [
     "crates/nelisp-gui-core",
     "crates/nelisp-gui-skia",
     "crates/nelisp-gui-cairo",
+    "crates/nelisp-input",
 ]
 # shells/ (Tauri etc.) are standalone crates with their own workspace — kept out
 # of `cargo test --workspace` / CI so the heavy webview dep tree isn't built there.

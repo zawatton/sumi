@@ -154,8 +154,11 @@ The =dtw-*= boundary already factors the rest of the platform into small
 vocabularies. Each becomes a backend-agnostic nelisp library:
 
 - *nelisp-gui* — this one (draw vocabulary).
+- *nelisp-input* — *done*: =crates/nelisp-input= (Rust core: logical =Button=,
+  HSP-style =stick= bitmask, =InputState=, key mapping) + =backends/input= (web/DOM
+  binding mirroring the same buttons + bits). The input counterpart of the draw
+  vocabulary (=dtw-read-key-state= / =dtw-read-stick= / key events).
 - *nelisp-audio* — =dtw-play-sound=, sound-memory.
-- *nelisp-input* — =dtw-read-key-state=, =dtw-read-stick=, key events.
 - *nelisp-fs* — =dtw-save-file= / =dtw-load-file=.
 - *nelisp-net* — =dtw-tcp-put=.
 - The *state-diff runner* itself is the shared nelisp execution substrate.
@@ -222,15 +225,20 @@ vocabularies. Each becomes a backend-agnostic nelisp library:
 ** Phase 4 — native GTK4 shell
 - Host the nelisp runtime in the gtk4-rs app; drive the Cairo backend live.
 
-** Phase 5 — companion libraries
-- Factor audio / input / fs / net into sibling crates/modules with backends.
+** Phase 5 — companion libraries — *in progress*
+- *nelisp-input* — *done*: =crates/nelisp-input= (Rust core) + =backends/input=
+  (web/DOM binding). Logical buttons, an HSP-`stick`-compatible bitmask, pointer
+  state, and a shared key map mirrored between Rust and JS. Tested on both sides
+  (=cargo test -p nelisp-input=, =node --test=).
+- Remaining: audio / fs / net as sibling crates/modules with backends.
 
 * Building and testing
 
-=scripts/check.sh= runs every backend's tests in one shot — core + tiny-skia
-(default toolchain), Cairo/GTK4 (auto-selecting the Windows MSYS2 + GNU toolchain
-or system GTK4 on Linux/macOS), and the Canvas backend (=node --test=). It prints
-=ALL GREEN= on success and is the green gate the development loop uses.
+=scripts/check.sh= runs every package's tests in one shot — core + tiny-skia +
+nelisp-input (default toolchain), Cairo/GTK4 (auto-selecting the Windows MSYS2 +
+GNU toolchain or system GTK4 on Linux/macOS), and the Canvas + input web bindings
+(=node --test=). It prints =ALL GREEN= on success and is the green gate the
+development loop uses.
 
 #+begin_src sh
   scripts/check.sh            # everything

@@ -9,8 +9,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "== core + skia (default toolchain) =="
-cargo test -p nelisp-gui-core -p nelisp-gui-skia
+echo "== core + skia + input (default toolchain) =="
+cargo test -p nelisp-gui-core -p nelisp-gui-skia -p nelisp-input
 
 if [ "${SKIP_CAIRO:-0}" = "1" ]; then
   echo "== cairo/gtk4: skipped (SKIP_CAIRO=1) =="
@@ -27,5 +27,8 @@ fi
 
 echo "== canvas (node) =="
 ( cd backends/canvas && node --test )
+
+echo "== input (node) =="
+( cd backends/input && node --test )
 
 echo "ALL GREEN"
