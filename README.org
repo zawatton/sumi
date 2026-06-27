@@ -1,4 +1,4 @@
-#+TITLE: nelisp-gui — a backend-agnostic 2D GUI library for nelisp
+#+TITLE: sumi — a backend-agnostic 2D GUI library for nelisp
 #+STARTUP: showall
 
 * What this is
@@ -9,7 +9,7 @@ unchanged on multiple rendering backends and multiple application shells.
 
 It was extracted from the newDTW game, whose entire non-GUI logic was migrated to
 nelisp (state-diff). That migration already abstracted all drawing into ~14 events
-(=dtw-set-color=, =dtw-fill-rect=, =dtw-draw-image=, =dtw-draw-text= …). =nelisp-gui=
+(=dtw-set-color=, =dtw-fill-rect=, =dtw-draw-image=, =dtw-draw-text= …). =sumi=
 generalises that boundary into a reusable library and adds native rendering.
 
 #+begin_example
@@ -26,8 +26,8 @@ generalises that boundary into a reusable library and adds native rendering.
 Render a frame with *zero system dependencies* (tiny-skia → PNG):
 
 #+begin_src rust
-  use nelisp_gui_core::{demo_frame, Backend};
-  use nelisp_gui_skia::SkiaBackend;
+  use sumi_core::{demo_frame, Backend};
+  use sumi_skia::SkiaBackend;
 
   let mut backend = SkiaBackend::new();
   backend.apply_all(&demo_frame());           // or your own Vec<Command>
@@ -38,7 +38,7 @@ Drive it straight from the *command stream* a nelisp program emits — each
 =(name, [i32…], text?)= tuple, parsed through the one contract:
 
 #+begin_src rust
-  use nelisp_gui_core::{parse, Backend};
+  use sumi_core::{parse, Backend};
 
   let cmds: Vec<_> = stream                    // &[(&str, Vec<i32>, Option<&str>)]
       .iter()
@@ -50,7 +50,7 @@ Drive it straight from the *command stream* a nelisp program emits — each
 Same vocabulary on the web (Canvas backend, Electron/Tauri):
 
 #+begin_src js
-  import { CanvasBackend, parseFrame } from 'nelisp-gui-canvas';
+  import { CanvasBackend, parseFrame } from 'sumi-canvas';
 
   const make = (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h });
   const backend = new CanvasBackend(make);
@@ -59,7 +59,7 @@ Same vocabulary on the web (Canvas backend, Electron/Tauri):
 #+end_src
 
 For a native window instead of a PNG, swap =SkiaBackend= for the Cairo backend and
-host it in a GTK4 =DrawingArea= (see =crates/nelisp-gui-cairo/src/window.rs=).
+host it in a GTK4 =DrawingArea= (see =crates/sumi-cairo/src/window.rs=).
 
 * Design goals
 
@@ -105,7 +105,7 @@ The model is the lowest common denominator of Canvas-2D and Cairo, so both map
 
 Input + window events flow back as a separate (already-abstracted) vocabulary:
 =dtw-read-key-state=, =dtw-read-stick=, =window-add-event-listener=. These become
-=nelisp-input= (a sibling library; see "Companion libraries").
+=sumi-input= (a sibling library; see "Companion libraries").
 
 * Architecture
 
@@ -117,8 +117,8 @@ each GUI command to the active backend. Adding a backend = implementing this
 interface; nothing in a nelisp program changes.
 
 Choosing a backend is the host's *only* backend-specific decision.
-=nelisp_gui_core::BackendKind= ({=Skia=, =Cairo=, =Canvas=}) names the choice, with
-=from_name= / =from_env= (=$NELISP_GUI_BACKEND=) so a shell can resolve it at
+=sumi_core::BackendKind= ({=Skia=, =Cairo=, =Canvas=}) names the choice, with
+=from_name= / =from_env= (=$SUMI_BACKEND=) so a shell can resolve it at
 startup — e.g. a native host maps =Cairo= → windowed GTK4 and =Skia= → headless
 PNG, a webview shell maps =Canvas=. A program never sees this.
 
@@ -127,14 +127,14 @@ PNG, a webview shell maps =Canvas=. A program never sees this.
 - *Canvas-2D* (=backends/canvas/=, dependency-free ES-module JavaScript). A
   standalone =CanvasBackend= that maps the vocabulary onto a =CanvasRenderingContext2D=
   (multi-buffer offscreen canvases, 9-arg =drawImage= sub-region blits, Pango-free
-  text via =fillText=). Owned by =nelisp-gui= itself — not imported from any game —
+  text via =fillText=). Owned by =sumi= itself — not imported from any game —
   so Electron and Tauri both consume it. The backend takes a =createCanvas(w,h)=
   factory, so it runs in a browser, under a webview, or against a recording mock in
   tests. Verified with =node --test= (3 passing), including rendering the same
   =frame.json= the native Cairo backend renders.
-- *Cairo/GTK4* (=crates/nelisp-gui-cairo/=, Rust + gtk4-rs + cairo-rs). Implements
+- *Cairo/GTK4* (=crates/sumi-cairo/=, Rust + gtk4-rs + cairo-rs). Implements
   the vocabulary against a =gtk::DrawingArea= with Cairo surfaces per buffer.
-- *tiny-skia* (=crates/nelisp-gui-skia/=, pure Rust, *no system deps*). A
+- *tiny-skia* (=crates/sumi-skia/=, pure Rust, *no system deps*). A
   rasteriser backend for headless PNGs and anywhere GTK isn't available. Text is
   drawn from a pure-Rust 8x8 bitmap font (=font8x8=) scaled to the font size, so it
   renders real glyphs without a system font engine; the Cairo backend is the
@@ -153,8 +153,8 @@ PNG, a webview shell maps =Canvas=. A program never sees this.
 The =dtw-*= boundary already factors the rest of the platform into small
 vocabularies. Each becomes a backend-agnostic nelisp library:
 
-- *nelisp-gui* — this one (draw vocabulary).
-- *nelisp-input* — *done*: =crates/nelisp-input= (Rust core: logical =Button=,
+- *sumi* — this one (draw vocabulary).
+- *sumi-input* — *done*: =crates/sumi-input= (Rust core: logical =Button=,
   HSP-style =stick= bitmask, =InputState=, key mapping) + =backends/input= (web/DOM
   binding mirroring the same buttons + bits). The input counterpart of the draw
   vocabulary (=dtw-read-key-state= / =dtw-read-stick= / key events).
@@ -170,16 +170,16 @@ vocabularies. Each becomes a backend-agnostic nelisp library:
 - Crate + module scaffold.
 
 ** Phase 1 — Cairo/GTK4 backend spike (native proof) — *DONE*
-- =nelisp-gui-skia= (pure-Rust tiny-skia) renders =demo_frame()= to a PNG — no
+- =sumi-skia= (pure-Rust tiny-skia) renders =demo_frame()= to a PNG — no
   system deps. Proves the vocabulary maps to a rasteriser.
-- =nelisp-gui-cairo= renders the same frame to a PNG on real Cairo surfaces with
+- =sumi-cairo= renders the same frame to a PNG on real Cairo surfaces with
   real *Pango text*, and hosts it in a live *GTK4 window* (=--bin
-  nelisp-gui-window=). Both verified on this machine (GNU toolchain + MSYS2 GTK4).
+  sumi-window=). Both verified on this machine (GNU toolchain + MSYS2 GTK4).
 - *Captured real game frame*: =newDTW.github.io/tools/capture_gui_frame.js=
   records one frame of the migrated game's own =dtw-*= draw stream (off the real
-  state-diff runner) into =frame.json=; =--bin nelisp-gui-frame= loads it, maps
-  every command through =nelisp_gui_core::parse= (the vocabulary contract), and
-  renders it natively (PNG =nelisp-gui-frame.png= + live GTK4 window). All 72
+  state-diff runner) into =frame.json=; =--bin sumi-frame= loads it, maps
+  every command through =sumi_core::parse= (the vocabulary contract), and
+  renders it natively (PNG =sumi-frame.png= + live GTK4 window). All 72
   commands mapped with none dropped; verified on this machine (=FRAME_EXIT=0=, no
   leftover process). The game's draw vocabulary now renders on a native backend
   with no webview and no Canvas.
@@ -187,7 +187,7 @@ vocabularies. Each becomes a backend-agnostic nelisp library:
   both backends: only the requested =(sx,sy,w,h)= rectangle is copied (and scaled
   to =(dw,dh)= for the scaled form), so a blit never spills the rest of the source
   buffer. Verified by tiny-skia unit tests with pixel assertions
-  (=cargo test -p nelisp-gui-skia=, 2 passing); the Cairo backend mirrors the same
+  (=cargo test -p sumi-skia=, 2 passing); the Cairo backend mirrors the same
   clip-then-paint mapping. The full v0 vocabulary now renders on both backends.
 - *Blend modes* are honoured on both native backends: =gui-set-blend-mode= maps
   =Normal/AlphaKey= → over-compositing (source alpha) and =Add= → additive
@@ -196,9 +196,9 @@ vocabularies. Each becomes a backend-agnostic nelisp library:
 - Remaining within this phase: driving real sprite blits needs the game's asset
   pack (the geometry/text/blend vocabulary itself is complete on every backend).
 
-** Phase 2 — Canvas backend, owned by nelisp-gui — *DONE*
+** Phase 2 — Canvas backend, owned by sumi — *DONE*
 - =backends/canvas/= is a standalone, dependency-free Canvas-2D backend that
-  implements the vocabulary (=parse= + =CanvasBackend=), so =nelisp-gui= owns the
+  implements the vocabulary (=parse= + =CanvasBackend=), so =sumi= owns the
   web rendering path instead of borrowing the game's adapter. Electron/Tauri
   shells consume it directly.
 - *Backend-agnostic proof*: the same captured =frame.json= renders on both the
@@ -206,7 +206,7 @@ vocabularies. Each becomes a backend-agnostic nelisp library:
   backend against a recording mock and asserts the draw calls (3 passing), incl.
   sub-region + scaled blits via 9-arg =drawImage=. =examples/canvas-demo.html=
   renders it in a real browser canvas.
-- The host's backend selection is encoded once in =nelisp_gui_core::BackendKind=
+- The host's backend selection is encoded once in =sumi_core::BackendKind=
   (=Skia=/=Cairo=/=Canvas=, with =from_name= / =from_env=). Both backends exist, so
   a shell just resolves the kind at startup; a program never sees it.
 
@@ -219,34 +219,34 @@ vocabularies. Each becomes a backend-agnostic nelisp library:
   WebView dep tree stays out of =cargo test --workspace= / CI.
 - Verified on this machine: builds against the default MSVC toolchain + WebView2
   (no GTK), runs and opens the WebView, and auto-quits cleanly
-  (=NELISP_GUI_AUTOQUIT=1=, =RUN_EXIT=0=, no leftover process). See
+  (=SUMI_AUTOQUIT=1=, =RUN_EXIT=0=, no leftover process). See
   =shells/tauri-app/README.org=.
 
 ** Phase 4 — native GTK4 shell (live) — *DONE*
 - =shells/gtk4-native/= runs a *live render loop* over the command vocabulary in a
   GTK4 window — no webview. *Model A* (command-stream / IPC): a =CommandSource=
   yields one frame given the current input each tick; the shell renders it via the
-  Cairo backend and folds keyboard events into a =nelisp_input::InputState= it
+  Cairo backend and folds keyboard events into a =sumi_input::InputState= it
   hands back. The =CommandSource= trait is the seam a nelisp program plugs into.
 - Two sources: =BoxDemo= (in-process stand-in — a box you move with the arrows /
   WASD, proving the input→program→commands→render loop) and =StdinSource=
-  (=NELISP_GUI_STDIN=1=) which reads a real program's NDJSON frame stream from
-  stdin — =nelisp-program | nelisp-gui-gtk4-native=.
-- Verified: builds (GNU toolchain + MSYS2 GTK4), and =NELISP_GUI_AUTOQUIT=1=
-  scripts "hold right" for ~40 ticks — the rendered =nelisp-gui-live.png= shows the
+  (=SUMI_STDIN=1=) which reads a real program's NDJSON frame stream from
+  stdin — =nelisp-program | sumi-gtk4-native=.
+- Verified: builds (GNU toolchain + MSYS2 GTK4), and =SUMI_AUTOQUIT=1=
+  scripts "hold right" for ~40 ticks — the rendered =sumi-live.png= shows the
   box moved to the right with live Pango text; =RUN_EXIT=0=, no leftover process.
 
 ** Phase 5 — companion libraries — *in progress*
-- *nelisp-input* — *done*: =crates/nelisp-input= (Rust core) + =backends/input=
+- *sumi-input* — *done*: =crates/sumi-input= (Rust core) + =backends/input=
   (web/DOM binding). Logical buttons, an HSP-`stick`-compatible bitmask, pointer
   state, and a shared key map mirrored between Rust and JS. Tested on both sides
-  (=cargo test -p nelisp-input=, =node --test=).
+  (=cargo test -p sumi-input=, =node --test=).
 - Remaining: audio / fs / net as sibling crates/modules with backends.
 
 * Building and testing
 
 =scripts/check.sh= runs every package's tests in one shot — core + tiny-skia +
-nelisp-input (default toolchain), Cairo/GTK4 (auto-selecting the Windows MSYS2 +
+sumi-input (default toolchain), Cairo/GTK4 (auto-selecting the Windows MSYS2 +
 GNU toolchain or system GTK4 on Linux/macOS), and the Canvas + input web bindings
 (=node --test=). It prints =ALL GREEN= on success and is the green gate the
 development loop uses.
@@ -272,10 +272,10 @@ link. The working setup on this machine:
   rustup toolchain install stable-x86_64-pc-windows-gnu
   # 3. build/run with mingw64 on PATH + PKG_CONFIG_PATH
   PKG_CONFIG_PATH=/c/msys64/mingw64/lib/pkgconfig PATH="/c/msys64/mingw64/bin:$PATH" \
-    cargo +stable-x86_64-pc-windows-gnu run -p nelisp-gui-cairo --bin nelisp-gui-window
+    cargo +stable-x86_64-pc-windows-gnu run -p sumi-cairo --bin sumi-window
 #+end_src
 
-The pure-Rust =nelisp-gui-skia= backend has *no* such requirement — it builds and
-renders a PNG on the default toolchain (=cargo run -p nelisp-gui-skia=), so the
+The pure-Rust =sumi-skia= backend has *no* such requirement — it builds and
+renders a PNG on the default toolchain (=cargo run -p sumi-skia=), so the
 vocabulary can be exercised anywhere. Linux GTK4: =apt install libgtk-4-dev=
 (MSVC alternative on Windows: gvsbuild). gvsbuild is the MSVC alternative.

@@ -1,8 +1,8 @@
-// nelisp-gui Canvas 2D backend — public entry point.
+// sumi Canvas 2D backend — public entry point.
 //
 // Usage (browser / Electron / Tauri webview):
 //
-//   import { CanvasBackend, parseFrame } from 'nelisp-gui-canvas';
+//   import { CanvasBackend, parseFrame } from 'sumi-canvas';
 //   const make = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 //   const backend = new CanvasBackend(make);
 //   backend.applyAll(parseFrame(frameJson));        // render the frame off-screen

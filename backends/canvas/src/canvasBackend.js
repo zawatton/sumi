@@ -1,4 +1,4 @@
-// HTML Canvas 2D backend for the nelisp-gui vocabulary.
+// HTML Canvas 2D backend for the sumi vocabulary.
 //
 // Implements the same contract as the Rust tiny-skia / Cairo backends, but
 // against the Canvas 2D API — this is the backend the Electron and Tauri shells

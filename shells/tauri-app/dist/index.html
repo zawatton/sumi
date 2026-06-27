@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>nelisp-gui — Tauri shell</title>
+    <title>sumi — Tauri shell</title>
     <style>
       html, body { margin: 0; background: #0b0b18; color: #cdd; font: 14px/1.5 system-ui, sans-serif; }
       main { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px; }
@@ -17,7 +17,7 @@
       <canvas id="screen" width="680" height="680"></canvas>
       <p id="src"></p>
       <p>
-        A <strong>Tauri</strong> (Rust) shell hosting the nelisp-gui
+        A <strong>Tauri</strong> (Rust) shell hosting the sumi
         <code>CanvasBackend</code> — the same backend the Electron shell uses. The
         Rust side carries no drawing logic; it just opens the WebView.
       </p>
@@ -41,7 +41,7 @@
         { name: 'gui-set-color', nums: [240, 220, 60] },
         { name: 'gui-set-font', nums: [28, 0], text: 'sans' },
         { name: 'gui-set-position', nums: [24, 24] },
-        { name: 'gui-draw-text', text: 'nelisp-gui' },
+        { name: 'gui-draw-text', text: 'sumi' },
         { name: 'gui-set-color', nums: [120, 200, 255] },
         { name: 'gui-set-font', nums: [16, 0], text: 'sans' },
         { name: 'gui-set-position', nums: [24, 64] },

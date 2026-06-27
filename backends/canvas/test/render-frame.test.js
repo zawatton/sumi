@@ -1,4 +1,4 @@
-// Verify the Canvas backend renders the nelisp-gui vocabulary — in particular
+// Verify the Canvas backend renders the sumi vocabulary — in particular
 // that the SAME captured game frame (../../../frame.json) that the native
 // Cairo/GTK4 backend renders also drives the Canvas backend. The vocabulary is
 // the only contract; this is the backend-agnostic proof on the web side.
@@ -59,7 +59,7 @@ test('the captured game frame renders through the Canvas backend', () => {
   // the real Pango-rendered labels come through as fillText with the same strings
   const texts = calls.filter((c) => c.op === 'fillText').map((c) => c.args[0]);
   for (const label of [
-    'nelisp-gui',
+    'sumi',
     'GTK4 / Cairo native backend',
     'STATUS',
     'RENDER',
@@ -70,7 +70,7 @@ test('the captured game frame renders through the Canvas backend', () => {
 
   // text is drawn from the top-left (matches the native backend's baseline)
   assert.ok(
-    calls.some((c) => c.op === 'fillText' && c.args[0] === 'nelisp-gui' && c.args[1] === 24 && c.args[2] === 16),
+    calls.some((c) => c.op === 'fillText' && c.args[0] === 'sumi' && c.args[1] === 24 && c.args[2] === 16),
     'the title is placed at the cursor (24,16)',
   );
 

@@ -1,6 +1,6 @@
-//! Backend-agnostic *input* vocabulary for nelisp — the sibling of `nelisp-gui`.
+//! Backend-agnostic *input* vocabulary for nelisp — the sibling of `sumi`.
 //!
-//! Drawing flows program → host (the `nelisp-gui` command vocabulary). Input
+//! Drawing flows program → host (the `sumi` command vocabulary). Input
 //! flows the other way: a shell (DOM in a webview, GTK in a native window)
 //! translates native key / pointer events into a common [`InputEvent`], folds
 //! them into an [`InputState`], and a nelisp program polls that state each frame —

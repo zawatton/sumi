@@ -1,18 +1,18 @@
-//! Native GTK4/Cairo backend for nelisp-gui — reference skeleton.
+//! Native GTK4/Cairo backend for sumi — reference skeleton.
 //!
-//! Implements the same [`nelisp_gui_core::Backend`] trait as the tiny-skia
+//! Implements the same [`sumi_core::Backend`] trait as the tiny-skia
 //! backend, but on real Cairo `ImageSurface`s with Pango text, hosted in a GTK4
 //! `DrawingArea`. This is the "nelisp GUI library" native target.
 //!
 //! Builds and runs on this machine against gtk4-rs 0.9 / cairo-rs 0.20 with the
 //! GTK4 dev libraries + a GNU Rust toolchain (see ../../README.org "Setup"). The
-//! bins `nelisp-gui-cairo-demo` (PNG), `nelisp-gui-window` (live GTK4 window) and
-//! `nelisp-gui-frame` (renders a captured game frame) exercise it.
+//! bins `sumi-cairo-demo` (PNG), `sumi-window` (live GTK4 window) and
+//! `sumi-frame` (renders a captured game frame) exercise it.
 
 use std::collections::HashMap;
 
 use cairo::{Context, Format, ImageSurface, Operator};
-use nelisp_gui_core::{Backend, BlendMode, Color, Command};
+use sumi_core::{Backend, BlendMode, Color, Command};
 
 /// A Cairo backend: one `ImageSurface` per buffer + immediate-mode state.
 pub struct CairoBackend {

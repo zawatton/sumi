@@ -1,7 +1,7 @@
 {
-  "name": "nelisp-gui-canvas",
+  "name": "sumi-canvas",
   "version": "0.0.0",
-  "description": "HTML Canvas 2D backend for the nelisp-gui drawing vocabulary (Electron / Tauri webview shells)",
+  "description": "HTML Canvas 2D backend for the sumi drawing vocabulary (Electron / Tauri webview shells)",
   "type": "module",
   "license": "CC0-1.0",
   "main": "./src/index.js",

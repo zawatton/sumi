@@ -1,8 +1,8 @@
-# nelisp-input — backend-agnostic input vocabulary, the sibling of nelisp-gui.
+# sumi-input — backend-agnostic input vocabulary, the sibling of sumi.
 # Pure Rust, no system deps (a workspace member, tested by CI / scripts/check.sh).
 
 [package]
-name = "nelisp-input"
+name = "sumi-input"
 version = "0.0.0"
 edition = "2021"
 description = "Backend-agnostic input vocabulary for nelisp (logical buttons, HSP-style stick, pointer)"

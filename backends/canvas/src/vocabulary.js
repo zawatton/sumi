@@ -1,6 +1,6 @@
-// The nelisp-gui drawing vocabulary, parsed into plain command objects.
+// The sumi drawing vocabulary, parsed into plain command objects.
 //
-// This is the JavaScript mirror of the Rust `nelisp_gui_core::parse` — the one
+// This is the JavaScript mirror of the Rust `sumi_core::parse` — the one
 // contract every backend shares. A nelisp program emits `(name, [i32…], text?)`
 // tuples (the same shape that arrives on the state-diff event stream); `parse`
 // turns each into a tagged command object the Canvas backend renders.

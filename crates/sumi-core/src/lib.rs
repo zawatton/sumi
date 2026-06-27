@@ -126,9 +126,9 @@ impl BackendKind {
         }
     }
 
-    /// The backend named by `$NELISP_GUI_BACKEND`, if set and recognised.
+    /// The backend named by `$SUMI_BACKEND`, if set and recognised.
     pub fn from_env() -> Option<Self> {
-        std::env::var("NELISP_GUI_BACKEND").ok().and_then(|v| Self::from_name(&v))
+        std::env::var("SUMI_BACKEND").ok().and_then(|v| Self::from_name(&v))
     }
 }
 
@@ -146,7 +146,7 @@ pub fn demo_frame() -> Vec<Command> {
         DrawLine { x1: 20, y1: 200, x2: 300, y2: 60 },
         SetColor(Color { r: 240, g: 220, b: 60 }),
         SetPosition { x: 60, y: 160 },
-        DrawText { text: "nelisp-gui".to_string() },
+        DrawText { text: "sumi".to_string() },
         Present,
     ]
 }

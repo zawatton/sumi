@@ -1,8 +1,8 @@
-// nelisp-input — web (DOM) binding of the backend-agnostic input vocabulary.
+// sumi-input — web (DOM) binding of the backend-agnostic input vocabulary.
 //
 // The sibling of the Canvas drawing backend: it translates DOM keyboard / pointer
 // events into the same logical buttons + HSP-style stick bitmask the Rust core
-// (`crates/nelisp-input`) defines, so the web and native shells agree. A program
+// (`crates/sumi-input`) defines, so the web and native shells agree. A program
 // polls `InputState` each frame (isDown / stick) just like on the native side.
 
 /** @typedef {'Up'|'Down'|'Left'|'Right'|'A'|'B'|'X'|'Y'|'Start'|'Select'} Button */

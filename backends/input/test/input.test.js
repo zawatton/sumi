@@ -1,5 +1,5 @@
 // Verify the web input binding folds DOM events into the same state + HSP stick
-// bitmask the Rust core (crates/nelisp-input) does. No DOM: a mock EventTarget
+// bitmask the Rust core (crates/sumi-input) does. No DOM: a mock EventTarget
 // records listeners and dispatches synthetic events.
 //
 // Run:  node --test   (from backends/input/)

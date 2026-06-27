@@ -1,4 +1,4 @@
-//! Pure-Rust [`nelisp_gui_core::Backend`] on tiny-skia.
+//! Pure-Rust [`sumi_core::Backend`] on tiny-skia.
 //!
 //! Builds with **no system dependencies**, so it proves the GUI vocabulary maps
 //! to a real 2D rasteriser without a GTK4/Cairo toolchain. The Cairo/GTK4 backend
@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 use font8x8::UnicodeFonts;
-use nelisp_gui_core::{Backend, BlendMode, Color as GuiColor, Command};
+use sumi_core::{Backend, BlendMode, Color as GuiColor, Command};
 use tiny_skia::{BlendMode as SkiaBlend, Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
 /// A tiny-skia backend. Holds one [`Pixmap`] per buffer plus immediate-mode state.

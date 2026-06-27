@@ -3,22 +3,22 @@
 //! `frame.json` is one frame of the migrated game's own `dtw-*` draw command
 //! stream, recorded by `newDTW.github.io/tools/capture_gui_frame.js` straight off
 //! the state-diff runner the game uses. This binary loads it, maps each command
-//! through `nelisp_gui_core::parse` (the stable vocabulary contract), renders it
+//! through `sumi_core::parse` (the stable vocabulary contract), renders it
 //! on real Cairo surfaces with Pango text, writes a PNG, and hosts it live in a
 //! GTK4 window — no webview, no Canvas. This is the "real screen, native" proof.
 //!
 //! Run (GTK4 + GNU toolchain on PATH/PKG_CONFIG_PATH):
-//!   cargo +stable-x86_64-pc-windows-gnu run -p nelisp-gui-cairo --bin nelisp-gui-frame
-//! Override the frame file with NELISP_GUI_FRAME=/path/to/frame.json.
-//! Set NELISP_GUI_AUTOQUIT=1 to close the window after ~1.2s (CI / smoke).
+//!   cargo +stable-x86_64-pc-windows-gnu run -p sumi-cairo --bin sumi-frame
+//! Override the frame file with SUMI_FRAME=/path/to/frame.json.
+//! Set SUMI_AUTOQUIT=1 to close the window after ~1.2s (CI / smoke).
 
 use std::fs;
 use std::time::Duration;
 
 use gtk4::prelude::*;
 use gtk4::{glib, Application, ApplicationWindow, DrawingArea};
-use nelisp_gui_cairo::CairoBackend;
-use nelisp_gui_core::{parse, Backend, Command};
+use sumi_cairo::CairoBackend;
+use sumi_core::{parse, Backend, Command};
 use serde::Deserialize;
 
 /// One entry of the captured stream: `{ "name": "...", "nums": [..], "text": ? }`.
@@ -32,7 +32,7 @@ struct RawCmd {
 }
 
 fn frame_path() -> String {
-    std::env::var("NELISP_GUI_FRAME")
+    std::env::var("SUMI_FRAME")
         .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../frame.json").to_string())
 }
 
@@ -69,7 +69,7 @@ fn main() {
     let frame = match load_frame(&path) {
         Ok(f) => f,
         Err(e) => {
-            eprintln!("nelisp-gui-frame: {e}");
+            eprintln!("sumi-frame: {e}");
             std::process::exit(1);
         }
     };
@@ -82,9 +82,9 @@ fn main() {
         let mut backend = CairoBackend::new();
         backend.apply_all(&frame);
         if let Some(surface) = backend.surface(0) {
-            match std::fs::File::create("nelisp-gui-frame.png") {
+            match std::fs::File::create("sumi-frame.png") {
                 Ok(mut f) => match surface.write_to_png(&mut f) {
-                    Ok(()) => println!("wrote nelisp-gui-frame.png ({w}x{h})"),
+                    Ok(()) => println!("wrote sumi-frame.png ({w}x{h})"),
                     Err(e) => eprintln!("write_to_png failed: {e}"),
                 },
                 Err(e) => eprintln!("create png failed: {e}"),
@@ -93,7 +93,7 @@ fn main() {
     }
 
     let app = Application::builder()
-        .application_id("org.nelisp.gui.frame")
+        .application_id("org.sumi.frame")
         .build();
 
     app.connect_activate(move |app| {
@@ -113,12 +113,12 @@ fn main() {
 
         let window = ApplicationWindow::builder()
             .application(app)
-            .title("nelisp-gui — captured game frame (GTK4 / Cairo)")
+            .title("sumi — captured game frame (GTK4 / Cairo)")
             .child(&area)
             .build();
         window.present();
 
-        if std::env::var("NELISP_GUI_AUTOQUIT").is_ok() {
+        if std::env::var("SUMI_AUTOQUIT").is_ok() {
             let app = app.clone();
             glib::timeout_add_local_once(Duration::from_millis(1200), move || app.quit());
         }

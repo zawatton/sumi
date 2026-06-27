@@ -1,5 +1,5 @@
 [package]
-name = "nelisp-gui-core"
+name = "sumi-core"
 version = "0.0.0"
 edition = "2021"
 description = "Backend-agnostic 2D GUI command vocabulary for nelisp"

@@ -6,8 +6,8 @@
 //! proves the live loop + input), and [`StdinSource`] — the model-A IPC path that
 //! reads a real program's NDJSON command stream from stdin.
 
-use nelisp_gui_core::{parse, Color, Command};
-use nelisp_input::{Button, InputState};
+use sumi_core::{parse, Color, Command};
+use sumi_input::{Button, InputState};
 
 /// Yields one frame of drawing commands per tick. In production this is a nelisp
 /// program (over IPC); here it is either an in-process demo or a stdin stream.
@@ -58,7 +58,7 @@ impl CommandSource for BoxDemo {
             SetColor(Color { r: 240, g: 220, b: 60 }),
             SetFont { name: "sans".into(), size: 18, style: 0 },
             SetPosition { x: 18, y: 16 },
-            DrawText { text: "nelisp-gui — native GTK4 live  (arrows / WASD to move)".into() },
+            DrawText { text: "sumi — native GTK4 live  (arrows / WASD to move)".into() },
             SetColor(Color { r: 220, g: 70, b: 70 }),
             FillRect { x1: self.x, y1: self.y, x2: self.x + self.size, y2: self.y + self.size },
             Present,
@@ -68,8 +68,8 @@ impl CommandSource for BoxDemo {
 
 /// Model-A IPC source: each line of stdin is one frame — a JSON array of
 /// `{name, nums, text?}` — exactly the shape `frame.json` uses. A nelisp program
-/// drives the native shell with `nelisp-program | nelisp-gui-gtk4-native` and
-/// `NELISP_GUI_STDIN=1`. A reader thread keeps the channel filled so the render
+/// drives the native shell with `nelisp-program | sumi-gtk4-native` and
+/// `SUMI_STDIN=1`. A reader thread keeps the channel filled so the render
 /// loop never blocks; the latest frame wins.
 pub struct StdinSource {
     rx: std::sync::mpsc::Receiver<Vec<Command>>,

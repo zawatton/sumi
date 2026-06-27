@@ -1,7 +1,7 @@
 {
-  "name": "nelisp-input-web",
+  "name": "sumi-input-web",
   "version": "0.0.0",
-  "description": "Web (DOM) binding of the nelisp-input vocabulary — logical buttons + HSP-style stick",
+  "description": "Web (DOM) binding of the sumi-input vocabulary — logical buttons + HSP-style stick",
   "type": "module",
   "license": "CC0-1.0",
   "main": "./src/index.js",
