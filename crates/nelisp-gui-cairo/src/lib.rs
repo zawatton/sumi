@@ -11,8 +11,8 @@
 
 use std::collections::HashMap;
 
-use cairo::{Context, Format, ImageSurface};
-use nelisp_gui_core::{Backend, Color, Command};
+use cairo::{Context, Format, ImageSurface, Operator};
+use nelisp_gui_core::{Backend, BlendMode, Color, Command};
 
 /// A Cairo backend: one `ImageSurface` per buffer + immediate-mode state.
 pub struct CairoBackend {
@@ -21,6 +21,7 @@ pub struct CairoBackend {
     color: Color,
     cursor: (f64, f64),
     font: (String, i32),
+    blend: BlendMode,
 }
 
 impl Default for CairoBackend {
@@ -31,6 +32,7 @@ impl Default for CairoBackend {
             color: Color { r: 0, g: 0, b: 0 },
             cursor: (0.0, 0.0),
             font: ("sans".into(), 16),
+            blend: BlendMode::Normal,
         }
     }
 }
@@ -45,12 +47,26 @@ impl CairoBackend {
         let surface = self.buffers.get(&self.current)?;
         let cr = Context::new(surface).ok()?;
         cr.set_source_rgb(self.color.r as f64 / 255.0, self.color.g as f64 / 255.0, self.color.b as f64 / 255.0);
+        cr.set_operator(match self.blend {
+            BlendMode::Normal => Operator::Over,
+            BlendMode::Add => Operator::Add,
+            // alpha-key sprites composite via the source alpha channel (our
+            // surfaces are ARgb32), which is exactly "over".
+            BlendMode::AlphaKey => Operator::Over,
+        });
         Some(cr)
     }
 
     /// The buffer surface (e.g. to attach to a GTK4 DrawingArea / write a PNG).
     pub fn surface(&self, id: i32) -> Option<&ImageSurface> {
         self.buffers.get(&id)
+    }
+
+    /// Remove and return a buffer's surface — e.g. to hand the finished frame to
+    /// a PNG writer or a host, or to read its pixels (which Cairo only allows on
+    /// an exclusively-owned surface). The backend no longer owns it afterward.
+    pub fn take_surface(&mut self, id: i32) -> Option<ImageSurface> {
+        self.buffers.remove(&id)
     }
 }
 
@@ -64,7 +80,7 @@ impl Backend for CairoBackend {
             }
             Command::BufferSelect { id } => self.current = *id,
             Command::SetColor(c) => self.color = *c,
-            Command::SetBlendMode(_m) => { /* TODO: cr.set_operator(...) per BlendMode */ }
+            Command::SetBlendMode(m) => self.blend = *m,
             Command::SetFont { name, size, .. } => self.font = (name.clone(), *size),
             Command::SetPosition { x, y } => self.cursor = (*x as f64, *y as f64),
             Command::FillRect { x1, y1, x2, y2 } => {
@@ -137,5 +153,33 @@ impl Backend for CairoBackend {
     }
 }
 
-// A GTK4 host (window + DrawingArea that blits the visible buffer) lands in
-// src/main.rs once this crate joins the workspace.
+// The GTK4 hosts live in src/window.rs (demo frame) and src/frame.rs (captured
+// game frame); src/main.rs writes a PNG.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Additive blend mode sums the source onto the destination via Cairo's
+    /// `Operator::Add`, where normal compositing would overwrite it.
+    #[test]
+    fn add_blend_mode_brightens() {
+        let mut b = CairoBackend::new();
+        b.apply(&Command::Screen { id: 0, w: 2, h: 2, mode: 0 });
+        b.apply(&Command::BufferSelect { id: 0 });
+        // base layer: red 100
+        b.apply(&Command::SetColor(Color { r: 100, g: 0, b: 0 }));
+        b.apply(&Command::FillRect { x1: 0, y1: 0, x2: 2, y2: 2 });
+        // additive red 100 on top -> ~200
+        b.apply(&Command::SetBlendMode(BlendMode::Add));
+        b.apply(&Command::SetColor(Color { r: 100, g: 0, b: 0 }));
+        b.apply(&Command::FillRect { x1: 0, y1: 0, x2: 2, y2: 2 });
+
+        let mut surf = b.take_surface(0).expect("buffer 0");
+        surf.flush();
+        let data = surf.data().expect("surface data");
+        // ARgb32 is BGRA byte order on little-endian; red is at offset 2.
+        let r = data[2];
+        assert!((195..=205).contains(&r), "additive blend brightened red to ~200 (got {r})");
+    }
+}

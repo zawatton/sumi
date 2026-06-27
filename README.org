@@ -135,8 +135,12 @@ vocabularies. Each becomes a backend-agnostic nelisp library:
   buffer. Verified by tiny-skia unit tests with pixel assertions
   (=cargo test -p nelisp-gui-skia=, 2 passing); the Cairo backend mirrors the same
   clip-then-paint mapping. The full v0 vocabulary now renders on both backends.
-- Remaining within this phase: blend modes on Cairo (=cr.set_operator=, for HSP
-  =gmode= alpha-key sprites); driving real sprite blits needs the game's asset pack.
+- *Blend modes* are honoured on both native backends: =gui-set-blend-mode= maps
+  =Normal/AlphaKey= → over-compositing (source alpha) and =Add= → additive
+  (Cairo =Operator::Add= / tiny-skia =BlendMode::Plus=). Unit tests assert an
+  additive fill brightens the destination on both backends (=add_blend_mode_brightens=).
+- Remaining within this phase: driving real sprite blits needs the game's asset
+  pack (the geometry/text/blend vocabulary itself is complete on every backend).
 
 ** Phase 2 — Canvas backend, owned by nelisp-gui — *DONE*
 - =backends/canvas/= is a standalone, dependency-free Canvas-2D backend that

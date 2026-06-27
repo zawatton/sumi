@@ -11,7 +11,7 @@
 use std::collections::HashMap;
 
 use nelisp_gui_core::{Backend, BlendMode, Color as GuiColor, Command};
-use tiny_skia::{Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
+use tiny_skia::{BlendMode as SkiaBlend, Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
 /// A tiny-skia backend. Holds one [`Pixmap`] per buffer plus immediate-mode state.
 pub struct SkiaBackend {
@@ -43,6 +43,11 @@ impl SkiaBackend {
         let mut p = Paint::default();
         p.set_color(Color::from_rgba8(self.color.r, self.color.g, self.color.b, 255));
         p.anti_alias = true;
+        p.blend_mode = match self.blend {
+            BlendMode::Add => SkiaBlend::Plus, // additive (HSP gmode add)
+            // normal + alpha-key both composite via the source alpha channel
+            BlendMode::Normal | BlendMode::AlphaKey => SkiaBlend::SourceOver,
+        };
         p
     }
 
@@ -205,5 +210,24 @@ mod tests {
         assert_eq!(px(p, 3, 3), (0, 255, 0, 255), "centre of the scaled blit is green");
         assert_eq!(px(p, 0, 0).3, 0, "before the destination origin stays transparent");
         assert_eq!(px(p, 7, 7).3, 0, "past the scaled region stays transparent");
+    }
+
+    /// Additive blend mode sums the source onto the destination (HSP gmode add),
+    /// where normal compositing would just overwrite it.
+    #[test]
+    fn add_blend_mode_brightens() {
+        let mut b = SkiaBackend::new();
+        b.apply(&Command::Screen { id: 0, w: 2, h: 2, mode: 0 });
+        b.apply(&Command::BufferSelect { id: 0 });
+        // base layer: red 100
+        b.apply(&Command::SetColor(GuiColor { r: 100, g: 0, b: 0 }));
+        b.apply(&Command::FillRect { x1: 0, y1: 0, x2: 2, y2: 2 });
+        // additive red 100 on top -> 200
+        b.apply(&Command::SetBlendMode(BlendMode::Add));
+        b.apply(&Command::SetColor(GuiColor { r: 100, g: 0, b: 0 }));
+        b.apply(&Command::FillRect { x1: 0, y1: 0, x2: 2, y2: 2 });
+
+        let r = px(b.pixmap(0).unwrap(), 0, 0).0;
+        assert_eq!(r, 200, "additive blend summed the two reds (100+100)");
     }
 }
