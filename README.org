@@ -1,0 +1,162 @@
+#+TITLE: nelisp-gui — a backend-agnostic 2D GUI library for nelisp
+#+STARTUP: showall
+
+* What this is
+
+A *general-purpose, backend-agnostic 2D GUI library* that a nelisp program drives
+by emitting a small, stable vocabulary of drawing commands. The same program runs
+unchanged on multiple rendering backends and multiple application shells.
+
+It was extracted from the newDTW game, whose entire non-GUI logic was migrated to
+nelisp (state-diff). That migration already abstracted all drawing into ~14 events
+(=dtw-set-color=, =dtw-fill-rect=, =dtw-draw-image=, =dtw-draw-text= …). =nelisp-gui=
+generalises that boundary into a reusable library and adds native rendering.
+
+#+begin_example
+  nelisp program ──emit──▶  GUI command vocabulary (stable API)
+                                       │
+        ┌──────────────────────────────┼──────────────────────────────┐
+   [Canvas-2D backend]           [GTK4/Cairo backend]           (future: wgpu, …)
+        │                               │
+   shell: Electron | Tauri        shell: native GTK4 app
+#+end_example
+
+* Design goals
+
+1. *Backend-agnostic.* The vocabulary is the only contract. Backends are
+   interchangeable; a program never names a backend.
+2. *Multi-shell.* The Canvas backend serves both Electron and Tauri (both render
+   HTML/Canvas in a webview). The Cairo backend serves a native GTK4 app (no
+   webview). All three ship from one codebase.
+3. *General-purpose, not game-specific.* The public vocabulary is a clean
+   immediate-mode 2D API. The game's =dtw-*= events are one binding onto it.
+4. *Easy to use.* A nelisp program needs only the vocabulary + a one-line backend
+   selection. No backend-specific code in the program.
+
+* The rendering model (immediate-mode, multi-buffer 2D)
+
+The model is the lowest common denominator of Canvas-2D and Cairo, so both map
+1:1. It is the HSP-style model the game already uses:
+
+- *Buffers* — N offscreen surfaces; one is "current". =buffer-select= switches.
+- *State* — current color, font, blend mode, and a draw cursor (position).
+- *Draw* — filled rect, line, point, text-at-cursor, blit (copy a region of one
+  buffer onto another, optionally scaled), clear.
+- *Present* — flush the visible buffer to the window.
+
+** Command vocabulary (v0 — stable API)
+
+| general command            | args                                  | game event (=dtw-*=) binding | Canvas             | Cairo                         |
+|----------------------------+---------------------------------------+------------------------------+--------------------+-------------------------------|
+| =gui-screen=               | id w h mode                           | dtw-screen                   | create canvas      | new ImageSurface              |
+| =gui-buffer-select=        | id                                    | dtw-select-buffer (gsel)     | set active ctx     | set active cr/surface         |
+| =gui-set-color=            | r g b                                 | dtw-set-color (color)        | fillStyle/strokeStyle | cr.set_source_rgb          |
+| =gui-set-blend-mode=       | mode                                  | dtw-set-blend-mode (gmode)   | globalCompositeOp  | cr.set_operator               |
+| =gui-set-font=             | name size style                       | dtw-set-font (font)          | ctx.font           | Pango font desc               |
+| =gui-set-position=         | x y                                   | dtw-set-position (pos)       | cursor (x,y)       | cursor (x,y)                  |
+| =gui-fill-rect=            | x1 y1 x2 y2                           | dtw-fill-rect (boxf)         | fillRect           | cr.rectangle + fill           |
+| =gui-draw-line=            | x1 y1 x2 y2                           | dtw-draw-line (line)         | moveTo/lineTo/stroke | cr.move_to/line_to/stroke   |
+| =gui-draw-point=           | x y                                   | dtw-draw-point (pset)        | fillRect 1×1       | cr.rectangle 1×1 + fill       |
+| =gui-draw-text=            | text …                                | dtw-draw-text (mes)          | fillText@cursor    | Pango layout @cursor          |
+| =gui-draw-image=           | srcBuf sx sy w h dx dy                | dtw-draw-image (gcopy)       | drawImage          | cr.set_source_surface + paint |
+| =gui-draw-image-scaled=    | srcBuf sx sy sw sh dx dy dw dh        | dtw-draw-image-scaled (gzoom)| drawImage scaled   | cr.scale + paint              |
+| =gui-object-size=          | w h                                   | dtw-object-size (objsize)    | sprite metrics     | sprite metrics                |
+| =gui-present=              | —                                     | dtw-redraw (redraw)          | requestAnimationFrame paint | queue_draw / snapshot   |
+
+Input + window events flow back as a separate (already-abstracted) vocabulary:
+=dtw-read-key-state=, =dtw-read-stick=, =window-add-event-listener=. These become
+=nelisp-input= (a sibling library; see "Companion libraries").
+
+* Architecture
+
+** Backend interface
+
+A backend implements one function: =dispatch(command, args) -> value=. The runner
+(=stateDiffRunner= in TS today; a Rust dispatcher for the native backend) routes
+each GUI command to the active backend. Adding a backend = implementing this
+interface; nothing in a nelisp program changes.
+
+** Backends
+
+- *Canvas-2D* (=backends/canvas/=, TypeScript). The existing adapter
+  (=gcopy/pos/color/boxf/line/font/mes/gmode/gsel=…) is exactly this backend; it
+  will be wrapped behind the interface so Electron and Tauri both consume it.
+- *Cairo/GTK4* (=crates/nelisp-gui-cairo/=, Rust + gtk4-rs + cairo-rs). Implements
+  the vocabulary against a =gtk::DrawingArea= with Cairo surfaces per buffer.
+
+** Shells
+
+- *Electron* — current. Canvas backend in the renderer; Electron main for window/IO.
+- *Tauri* — Canvas backend in the webview; a thin Rust =tauri= shell replaces the
+  Electron main (window, fs, ipc).
+- *Native GTK4* — Cairo backend; a =gtk4-rs= app hosts the nelisp runtime and the
+  DrawingArea. No webview.
+
+* Companion libraries (extract the same way)
+
+The =dtw-*= boundary already factors the rest of the platform into small
+vocabularies. Each becomes a backend-agnostic nelisp library:
+
+- *nelisp-gui* — this one (draw vocabulary).
+- *nelisp-audio* — =dtw-play-sound=, sound-memory.
+- *nelisp-input* — =dtw-read-key-state=, =dtw-read-stick=, key events.
+- *nelisp-fs* — =dtw-save-file= / =dtw-load-file=.
+- *nelisp-net* — =dtw-tcp-put=.
+- The *state-diff runner* itself is the shared nelisp execution substrate.
+
+* Roadmap
+
+** Phase 0 — contract (this commit)
+- Vocabulary spec (above) frozen as v0.
+- Crate + module scaffold.
+
+** Phase 1 — Cairo/GTK4 backend spike (native proof) — *DONE*
+- =nelisp-gui-skia= (pure-Rust tiny-skia) renders =demo_frame()= to a PNG — no
+  system deps. Proves the vocabulary maps to a rasteriser.
+- =nelisp-gui-cairo= renders the same frame to a PNG on real Cairo surfaces with
+  real *Pango text*, and hosts it in a live *GTK4 window* (=--bin
+  nelisp-gui-window=). Both verified on this machine (GNU toolchain + MSYS2 GTK4).
+- *Captured real game frame*: =newDTW.github.io/tools/capture_gui_frame.js=
+  records one frame of the migrated game's own =dtw-*= draw stream (off the real
+  state-diff runner) into =frame.json=; =--bin nelisp-gui-frame= loads it, maps
+  every command through =nelisp_gui_core::parse= (the vocabulary contract), and
+  renders it natively (PNG =nelisp-gui-frame.png= + live GTK4 window). All 72
+  commands mapped with none dropped; verified on this machine (=FRAME_EXIT=0=, no
+  leftover process). The game's draw vocabulary now renders on a native backend
+  with no webview and no Canvas.
+- Next within this phase: honour sub-region blits (=dtw-draw-image=); these need
+  the game's sprite asset pack, which the geometry+text subset does not.
+
+** Phase 2 — backend interface in the TS runner
+- Route the renderer's =dtw-*= dispatch through a =GuiBackend= interface.
+- Canvas backend = existing adapter behind the interface. Electron unaffected.
+
+** Phase 3 — Tauri shell
+- Replace the Electron main with a Tauri (Rust) shell. Canvas backend unchanged.
+
+** Phase 4 — native GTK4 shell
+- Host the nelisp runtime in the gtk4-rs app; drive the Cairo backend live.
+
+** Phase 5 — companion libraries
+- Factor audio / input / fs / net into sibling crates/modules with backends.
+
+* Setup (GTK4 on Windows)
+
+The Cairo/GTK4 backend needs the GTK4 dev libraries *and a GNU Rust toolchain* on
+Windows — MSYS2 GTK4 is MinGW (GCC ABI), which the default MSVC toolchain cannot
+link. The working setup on this machine:
+
+#+begin_src sh
+  # 1. GTK4 via MSYS2
+  pacman -S --needed mingw-w64-x86_64-gtk4 mingw-w64-x86_64-pkgconf
+  # 2. GNU Rust toolchain (MSVC cannot link MinGW libs)
+  rustup toolchain install stable-x86_64-pc-windows-gnu
+  # 3. build/run with mingw64 on PATH + PKG_CONFIG_PATH
+  PKG_CONFIG_PATH=/c/msys64/mingw64/lib/pkgconfig PATH="/c/msys64/mingw64/bin:$PATH" \
+    cargo +stable-x86_64-pc-windows-gnu run -p nelisp-gui-cairo --bin nelisp-gui-window
+#+end_src
+
+The pure-Rust =nelisp-gui-skia= backend has *no* such requirement — it builds and
+renders a PNG on the default toolchain (=cargo run -p nelisp-gui-skia=), so the
+vocabulary can be exercised anywhere. Linux GTK4: =apt install libgtk-4-dev=
+(MSVC alternative on Windows: gvsbuild). gvsbuild is the MSVC alternative.

@@ -1,0 +1,38 @@
+# Native Cairo/GTK4 backend for nelisp-gui.
+#
+# Needs the GTK4 dev libraries (cairo, pango, gtk4) and a GNU Rust toolchain on
+# Windows (MSYS2 GTK4 is MinGW, not MSVC). See ../../README.org "Setup".
+# Build/run with:
+#   PKG_CONFIG_PATH=/mingw64/lib/pkgconfig PATH=/mingw64/bin:$PATH \
+#     cargo +stable-x86_64-pc-windows-gnu run -p nelisp-gui-cairo --bin <name>
+
+[package]
+name = "nelisp-gui-cairo"
+version = "0.0.0"
+edition = "2021"
+description = "Native Cairo/GTK4 backend for nelisp-gui (real surfaces, Pango text, GTK4 window)"
+license = "CC0-1.0"
+
+[dependencies]
+nelisp-gui-core = { path = "../nelisp-gui-core" }
+cairo-rs = { version = "0.20", features = ["png"] }
+pango = "0.20"
+pangocairo = "0.20"
+gtk4 = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# headless PNG render (no window) — proves Cairo + Pango
+[[bin]]
+name = "nelisp-gui-cairo-demo"
+path = "src/main.rs"
+
+# live GTK4 window — proves gtk4-rs links and renders natively
+[[bin]]
+name = "nelisp-gui-window"
+path = "src/window.rs"
+
+# render a captured real game frame (frame.json) natively in a GTK4 window
+[[bin]]
+name = "nelisp-gui-frame"
+path = "src/frame.rs"
