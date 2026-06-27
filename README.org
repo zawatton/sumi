@@ -21,6 +21,20 @@ generalises that boundary into a reusable library and adds native rendering.
    shell: Electron | Tauri        shell: native GTK4 app
 #+end_example
 
+* Proven in a real app
+
+The =newDTW= game (TypeScript/Electron) was switched to draw entirely through
+=sumi= — its colour, line, fill, text and sprite adapters delegate to the library
+(sharing the game's canvases; game-specific bits like asset I/O and special
+compositing stay game-side). The result:
+
+- the game renders identically in *Electron* and *Tauri* (Canvas backend), and
+- the same frames render *natively on GTK4/Cairo* — both as a one-shot replay of
+  a captured frame (=sumi-replay=, loading the game's PNG sprite assets) and *live*
+  (=sumi-live=: the running game streams ~35 fps over TCP and the native window
+  repaints each frame). One vocabulary, webview *and* native, no game changes
+  beyond the delegating adapters.
+
 * Quickstart
 
 Render a frame with *zero system dependencies* (tiny-skia → PNG):
