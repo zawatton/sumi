@@ -202,8 +202,17 @@ vocabularies. Each becomes a backend-agnostic nelisp library:
   (=Skia=/=Cairo=/=Canvas=, with =from_name= / =from_env=). Both backends exist, so
   a shell just resolves the kind at startup; a program never sees it.
 
-** Phase 3 — Tauri shell
-- Replace the Electron main with a Tauri (Rust) shell. Canvas backend unchanged.
+** Phase 3 — Tauri shell — *DONE*
+- =shells/tauri-app/= is a thin Tauri (Rust) shell that hosts the Canvas backend
+  in a WebView — the Tauri counterpart of the Electron shell, with no drawing
+  logic of its own. =build.rs= vendors =backends/canvas/src= + =frame.json= into
+  =dist/=; the frontend renders the captured frame with the unchanged backend.
+- Standalone crate (own =[workspace]=, excluded from the parent) so the large
+  WebView dep tree stays out of =cargo test --workspace= / CI.
+- Verified on this machine: builds against the default MSVC toolchain + WebView2
+  (no GTK), runs and opens the WebView, and auto-quits cleanly
+  (=NELISP_GUI_AUTOQUIT=1=, =RUN_EXIT=0=, no leftover process). See
+  =shells/tauri-app/README.org=.
 
 ** Phase 4 — native GTK4 shell
 - Host the nelisp runtime in the gtk4-rs app; drive the Cairo backend live.

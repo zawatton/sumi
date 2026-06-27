@@ -5,3 +5,6 @@ members = [
     "crates/nelisp-gui-skia",
     "crates/nelisp-gui-cairo",
 ]
+# shells/ (Tauri etc.) are standalone crates with their own workspace — kept out
+# of `cargo test --workspace` / CI so the heavy webview dep tree isn't built there.
+exclude = ["shells"]

@@ -1,0 +1,23 @@
+# Thin Tauri shell for nelisp-gui: hosts the Canvas-2D backend in a WebView.
+#
+# Standalone crate (own [workspace]) so it stays out of the parent workspace's
+# `cargo test --workspace` and CI — the Tauri/WebView dep tree is large and
+# platform-specific (WebView2 on Windows, WebKitGTK on Linux).
+#
+# Build/run (Windows uses the default MSVC toolchain + WebView2 — no GTK):
+#   cargo run            (from shells/tauri-app/)
+
+[package]
+name = "nelisp-gui-tauri"
+version = "0.0.0"
+edition = "2021"
+description = "Thin Tauri shell hosting the nelisp-gui Canvas backend in a webview"
+license = "CC0-1.0"
+
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
