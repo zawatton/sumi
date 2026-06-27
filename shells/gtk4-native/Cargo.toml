@@ -1,0 +1,28 @@
+# Native GTK4 shell for nelisp-gui (Phase 4, model A: command-stream / IPC).
+#
+# A live render loop: a CommandSource (a nelisp program's role) yields a frame of
+# vocabulary each tick; the shell renders it via the Cairo backend into a GTK4
+# window and feeds input (nelisp-input) back. Standalone crate (own [workspace],
+# parent excludes shells/) so the GTK4 dep tree stays out of CI.
+#
+# Build/run (Windows: GNU toolchain + MSYS2 GTK4 on PATH/PKG_CONFIG_PATH):
+#   cargo +stable-x86_64-pc-windows-gnu run            # built-in movable-box demo
+#   NELISP_GUI_STDIN=1 cargo +... run  < frames.ndjson # a nelisp program's stream
+
+[package]
+name = "nelisp-gui-gtk4-native"
+version = "0.0.0"
+edition = "2021"
+description = "Native GTK4 shell — live render loop over the nelisp-gui command stream"
+license = "CC0-1.0"
+
+[workspace]
+
+[dependencies]
+nelisp-gui-core = { path = "../../crates/nelisp-gui-core" }
+nelisp-gui-cairo = { path = "../../crates/nelisp-gui-cairo" }
+nelisp-input = { path = "../../crates/nelisp-input" }
+gtk4 = "0.9"
+cairo-rs = { version = "0.20", features = ["png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

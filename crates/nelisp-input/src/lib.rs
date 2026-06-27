@@ -58,19 +58,19 @@ impl Button {
 }
 
 /// Map a key name to a logical button. Accepts browser `KeyboardEvent.code`
-/// values (`ArrowUp`, `KeyZ`, `Space`…) and bare GTK-ish key names (`Up`,
-/// `space`), so the same mapping serves the web and native shells. WASD doubles
-/// the arrows; Z/X/A/S are the action buttons.
+/// values (`ArrowUp`, `KeyZ`, `Space`…) and GTK/GDK key names (`Up`, `space`,
+/// and bare letters `w`/`z`…), so the same mapping serves the web and native
+/// shells. WASD doubles the arrows; Z/X/C/V are the action buttons.
 pub fn button_from_key(code: &str) -> Option<Button> {
     match code {
-        "ArrowUp" | "Up" | "KeyW" => Some(Button::Up),
-        "ArrowDown" | "Down" | "KeyS" => Some(Button::Down),
-        "ArrowLeft" | "Left" | "KeyA" => Some(Button::Left),
-        "ArrowRight" | "Right" | "KeyD" => Some(Button::Right),
-        "KeyZ" | "Space" | "space" => Some(Button::A),
-        "KeyX" => Some(Button::B),
-        "KeyC" => Some(Button::Y),
-        "KeyV" => Some(Button::X),
+        "ArrowUp" | "Up" | "KeyW" | "w" | "W" => Some(Button::Up),
+        "ArrowDown" | "Down" | "KeyS" | "s" | "S" => Some(Button::Down),
+        "ArrowLeft" | "Left" | "KeyA" | "a" | "A" => Some(Button::Left),
+        "ArrowRight" | "Right" | "KeyD" | "d" | "D" => Some(Button::Right),
+        "KeyZ" | "Space" | "space" | "z" | "Z" => Some(Button::A),
+        "KeyX" | "x" | "X" => Some(Button::B),
+        "KeyC" | "c" | "C" => Some(Button::Y),
+        "KeyV" | "v" | "V" => Some(Button::X),
         "Enter" | "Return" => Some(Button::Start),
         "ShiftLeft" | "ShiftRight" | "Shift_L" | "Shift_R" => Some(Button::Select),
         _ => None,
@@ -133,7 +133,11 @@ mod tests {
         assert_eq!(button_from_key("KeyW"), Some(Button::Up));
         assert_eq!(button_from_key("Space"), Some(Button::A));
         assert_eq!(button_from_key("Enter"), Some(Button::Start));
+        // GTK/GDK bare key names (native shell)
+        assert_eq!(button_from_key("Up"), Some(Button::Up));
+        assert_eq!(button_from_key("z"), Some(Button::A));
         assert_eq!(button_from_key("KeyQ"), None);
+        assert_eq!(button_from_key("q"), None);
     }
 
     #[test]

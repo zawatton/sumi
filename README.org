@@ -222,8 +222,19 @@ vocabularies. Each becomes a backend-agnostic nelisp library:
   (=NELISP_GUI_AUTOQUIT=1=, =RUN_EXIT=0=, no leftover process). See
   =shells/tauri-app/README.org=.
 
-** Phase 4 — native GTK4 shell
-- Host the nelisp runtime in the gtk4-rs app; drive the Cairo backend live.
+** Phase 4 — native GTK4 shell (live) — *DONE*
+- =shells/gtk4-native/= runs a *live render loop* over the command vocabulary in a
+  GTK4 window — no webview. *Model A* (command-stream / IPC): a =CommandSource=
+  yields one frame given the current input each tick; the shell renders it via the
+  Cairo backend and folds keyboard events into a =nelisp_input::InputState= it
+  hands back. The =CommandSource= trait is the seam a nelisp program plugs into.
+- Two sources: =BoxDemo= (in-process stand-in — a box you move with the arrows /
+  WASD, proving the input→program→commands→render loop) and =StdinSource=
+  (=NELISP_GUI_STDIN=1=) which reads a real program's NDJSON frame stream from
+  stdin — =nelisp-program | nelisp-gui-gtk4-native=.
+- Verified: builds (GNU toolchain + MSYS2 GTK4), and =NELISP_GUI_AUTOQUIT=1=
+  scripts "hold right" for ~40 ticks — the rendered =nelisp-gui-live.png= shows the
+  box moved to the right with live Pango text; =RUN_EXIT=0=, no leftover process.
 
 ** Phase 5 — companion libraries — *in progress*
 - *nelisp-input* — *done*: =crates/nelisp-input= (Rust core) + =backends/input=
