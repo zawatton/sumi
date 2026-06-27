@@ -1,0 +1,17 @@
+{
+  "name": "nelisp-gui-canvas",
+  "version": "0.0.0",
+  "description": "HTML Canvas 2D backend for the nelisp-gui drawing vocabulary (Electron / Tauri webview shells)",
+  "type": "module",
+  "license": "CC0-1.0",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test"
+  }
+}

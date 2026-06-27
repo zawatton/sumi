@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>nelisp-gui — Canvas backend demo</title>
+    <style>
+      body { margin: 0; background: #0b0b18; color: #cdd; font: 14px/1.5 system-ui, sans-serif; }
+      main { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 20px; }
+      canvas { border: 1px solid #333; image-rendering: pixelated; }
+      p { max-width: 680px; opacity: 0.8; }
+      code { color: #9cf; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <canvas id="screen" width="680" height="680"></canvas>
+      <p id="src"></p>
+      <p>
+        The same <code>gui-*</code>/<code>dtw-*</code> drawing vocabulary that the
+        native Cairo/GTK4 backend renders is rendered here on HTML Canvas 2D — the
+        backend the Electron and Tauri shells use. The program never names a backend.
+      </p>
+    </main>
+
+    <script type="module">
+      import { CanvasBackend, parseFrame } from '../src/index.js';
+
+      // browser canvas factory: an offscreen <canvas> per buffer
+      const make = (w, h) => {
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        return c;
+      };
+
+      // A self-contained HUD frame in the stable vocabulary (works from file://).
+      // When served over http, the real captured game frame (../../frame.json) is
+      // fetched instead, so this page shows exactly what the native backend drew.
+      const fallbackFrame = [
+        { name: 'gui-screen', nums: [0, 680, 680, 0] },
+        { name: 'gui-set-color', nums: [18, 18, 44] },
+        { name: 'gui-fill-rect', nums: [0, 0, 680, 680] },
+        { name: 'gui-set-color', nums: [30, 34, 72] },
+        { name: 'gui-fill-rect', nums: [0, 0, 680, 64] },
+        { name: 'gui-set-color', nums: [240, 220, 60] },
+        { name: 'gui-set-font', nums: [28, 0], text: 'sans' },
+        { name: 'gui-set-position', nums: [24, 16] },
+        { name: 'gui-draw-text', text: 'nelisp-gui' },
+        { name: 'gui-set-color', nums: [120, 200, 255] },
+        { name: 'gui-set-font', nums: [16, 0], text: 'sans' },
+        { name: 'gui-set-position', nums: [250, 26] },
+        { name: 'gui-draw-text', text: 'Canvas 2D backend (Electron / Tauri)' },
+        { name: 'gui-set-color', nums: [70, 80, 140] },
+        { name: 'gui-draw-line', nums: [0, 64, 680, 64] },
+        { name: 'gui-set-color', nums: [26, 28, 52] },
+        { name: 'gui-fill-rect', nums: [24, 96, 324, 316] },
+        { name: 'gui-set-color', nums: [200, 210, 240] },
+        { name: 'gui-set-font', nums: [18, 0], text: 'sans' },
+        { name: 'gui-set-position', nums: [40, 104] },
+        { name: 'gui-draw-text', text: 'STATUS' },
+        { name: 'gui-set-color', nums: [200, 210, 240] },
+        { name: 'gui-set-font', nums: [15, 0], text: 'sans' },
+        { name: 'gui-set-position', nums: [40, 146] },
+        { name: 'gui-draw-text', text: 'backend: canvas 2d' },
+        { name: 'gui-set-position', nums: [40, 176] },
+        { name: 'gui-draw-text', text: 'shell:   electron | tauri' },
+      ];
+
+      async function loadFrame() {
+        try {
+          const res = await fetch('../../frame.json');
+          if (res.ok) return { entries: await res.json(), src: '../../frame.json (captured game frame)' };
+        } catch (_e) {
+          /* file:// — fall back to the inline frame */
+        }
+        return { entries: fallbackFrame, src: 'inline demo frame (serve over http to load frame.json)' };
+      }
+
+      const { entries, src } = await loadFrame();
+      document.getElementById('src').textContent = `source: ${src} — ${entries.length} commands`;
+
+      const backend = new CanvasBackend(make);
+      backend.applyAll(parseFrame(entries));
+
+      // present buffer 0 onto the visible canvas
+      const screen = document.getElementById('screen');
+      const buf0 = backend.surface(0);
+      if (buf0) screen.getContext('2d').drawImage(buf0, 0, 0);
+    </script>
+  </body>
+</html>

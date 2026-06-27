@@ -78,9 +78,14 @@ interface; nothing in a nelisp program changes.
 
 ** Backends
 
-- *Canvas-2D* (=backends/canvas/=, TypeScript). The existing adapter
-  (=gcopy/pos/color/boxf/line/font/mes/gmode/gsel=…) is exactly this backend; it
-  will be wrapped behind the interface so Electron and Tauri both consume it.
+- *Canvas-2D* (=backends/canvas/=, dependency-free ES-module JavaScript). A
+  standalone =CanvasBackend= that maps the vocabulary onto a =CanvasRenderingContext2D=
+  (multi-buffer offscreen canvases, 9-arg =drawImage= sub-region blits, Pango-free
+  text via =fillText=). Owned by =nelisp-gui= itself — not imported from any game —
+  so Electron and Tauri both consume it. The backend takes a =createCanvas(w,h)=
+  factory, so it runs in a browser, under a webview, or against a recording mock in
+  tests. Verified with =node --test= (3 passing), including rendering the same
+  =frame.json= the native Cairo backend renders.
 - *Cairo/GTK4* (=crates/nelisp-gui-cairo/=, Rust + gtk4-rs + cairo-rs). Implements
   the vocabulary against a =gtk::DrawingArea= with Cairo surfaces per buffer.
 
@@ -133,9 +138,18 @@ vocabularies. Each becomes a backend-agnostic nelisp library:
 - Remaining within this phase: blend modes on Cairo (=cr.set_operator=, for HSP
   =gmode= alpha-key sprites); driving real sprite blits needs the game's asset pack.
 
-** Phase 2 — backend interface in the TS runner
-- Route the renderer's =dtw-*= dispatch through a =GuiBackend= interface.
-- Canvas backend = existing adapter behind the interface. Electron unaffected.
+** Phase 2 — Canvas backend, owned by nelisp-gui — *DONE*
+- =backends/canvas/= is a standalone, dependency-free Canvas-2D backend that
+  implements the vocabulary (=parse= + =CanvasBackend=), so =nelisp-gui= owns the
+  web rendering path instead of borrowing the game's adapter. Electron/Tauri
+  shells consume it directly.
+- *Backend-agnostic proof*: the same captured =frame.json= renders on both the
+  native Cairo/GTK4 backend and this Canvas backend. =node --test= drives the real
+  backend against a recording mock and asserts the draw calls (3 passing), incl.
+  sub-region + scaled blits via 9-arg =drawImage=. =examples/canvas-demo.html=
+  renders it in a real browser canvas.
+- Next: a thin =GuiBackend= dispatch the host wires up (native picks Cairo, webview
+  picks Canvas) — purely a host-side selection now that both backends exist.
 
 ** Phase 3 — Tauri shell
 - Replace the Electron main with a Tauri (Rust) shell. Canvas backend unchanged.
