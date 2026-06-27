@@ -22,6 +22,8 @@ pub struct CairoBackend {
     cursor: (f64, f64),
     font: (String, i32),
     blend: BlendMode,
+    /// Directory that `LoadImage` resolves asset names against (`<root>/<name>.png`).
+    image_root: String,
 }
 
 impl Default for CairoBackend {
@@ -33,6 +35,7 @@ impl Default for CairoBackend {
             cursor: (0.0, 0.0),
             font: ("sans".into(), 16),
             blend: BlendMode::Normal,
+            image_root: String::new(),
         }
     }
 }
@@ -40,6 +43,11 @@ impl Default for CairoBackend {
 impl CairoBackend {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Directory that `LoadImage` asset names resolve against (`<root>/<name>.png`).
+    pub fn set_image_root(&mut self, root: impl Into<String>) {
+        self.image_root = root.into();
     }
 
     /// A fresh Cairo context over the current buffer with the current colour set.
@@ -148,6 +156,18 @@ impl Backend for CairoBackend {
                 }
             }
             Command::ObjectSize { .. } => {}
+            Command::LoadImage { id, name } => {
+                // resolve <image_root>/<name>.png and load it into buffer `id`
+                let path = format!("{}/{}.png", self.image_root, name);
+                match std::fs::File::open(&path).map_err(|_| ()).and_then(|mut f| {
+                    ImageSurface::create_from_png(&mut f).map_err(|_| ())
+                }) {
+                    Ok(surface) => {
+                        self.buffers.insert(*id, surface);
+                    }
+                    Err(_) => eprintln!("load-image: failed to open {path}"),
+                }
+            }
             Command::Present => { /* host calls drawing_area.queue_draw() */ }
         }
     }

@@ -162,6 +162,9 @@ impl Backend for SkiaBackend {
                 }
             }
             Command::ObjectSize { .. } => {}
+            // image loading needs a decoder; the dependency-free skia backend
+            // skips it (the Cairo backend loads PNGs). Sprites stay empty here.
+            Command::LoadImage { .. } => {}
             Command::Present => {} // PNG/window present handled by the host (see main.rs)
         }
     }

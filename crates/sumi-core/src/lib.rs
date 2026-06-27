@@ -53,6 +53,9 @@ pub enum Command {
     DrawImageScaled { src: i32, sx: i32, sy: i32, sw: i32, sh: i32, dx: i32, dy: i32, dw: i32, dh: i32 },
     /// Declare sprite/object metrics (`gui-object-size`).
     ObjectSize { w: i32, h: i32 },
+    /// Load an image asset into buffer `id` (`gui-load-image`). `name` is the
+    /// asset name; a backend resolves it to a file (e.g. `<root>/<name>.png`).
+    LoadImage { id: i32, name: String },
     /// Flush the visible buffer to the window (`gui-present`).
     Present,
 }
@@ -78,7 +81,7 @@ pub fn parse(name: &str, a: &[i32], text: Option<&str>) -> Option<Command> {
     let g = |i: usize| a.get(i).copied().unwrap_or(0);
     Some(match name {
         "gui-screen" | "dtw-screen" => Command::Screen { id: g(0), w: g(1), h: g(2), mode: g(3) },
-        "gui-buffer-select" | "dtw-select-buffer" => Command::BufferSelect { id: g(0) },
+        "gui-buffer-select" | "gui-select-buffer" | "dtw-select-buffer" => Command::BufferSelect { id: g(0) },
         "gui-set-color" | "dtw-set-color" => Command::SetColor(Color { r: g(0) as u8, g: g(1) as u8, b: g(2) as u8 }),
         "gui-set-blend-mode" | "dtw-set-blend-mode" => Command::SetBlendMode(match g(0) {
             0 | 1 => BlendMode::Normal,
@@ -94,6 +97,7 @@ pub fn parse(name: &str, a: &[i32], text: Option<&str>) -> Option<Command> {
         "gui-draw-image-scaled" | "dtw-draw-image-scaled" =>
             Command::DrawImageScaled { src: g(0), sx: g(1), sy: g(2), sw: g(3), sh: g(4), dx: g(5), dy: g(6), dw: g(7), dh: g(8) },
         "gui-object-size" | "dtw-object-size" => Command::ObjectSize { w: g(0), h: g(1) },
+        "gui-load-image" | "dtw-load-image" => Command::LoadImage { id: g(0), name: text.unwrap_or("").to_string() },
         "gui-present" | "dtw-redraw" => Command::Present,
         _ => return None,
     })
