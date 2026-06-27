@@ -4,12 +4,14 @@
 //! to a real 2D rasteriser without a GTK4/Cairo toolchain. The Cairo/GTK4 backend
 //! (native window + Pango text) implements the same trait once GTK4 is installed.
 //!
-//! Text rendering is stubbed here (tiny-skia has no font engine); the Cairo
-//! backend renders real text via Pango. Sub-region blits are honoured (see
-//! [`sub_pixmap`]).
+//! Text is rendered from a pure-Rust 8x8 bitmap font (=font8x8=), scaled to the
+//! font size — real readable glyphs with no system font engine (the Cairo backend
+//! renders high-quality antialiased text via Pango). Sub-region blits are honoured
+//! (see [`sub_pixmap`]).
 
 use std::collections::HashMap;
 
+use font8x8::UnicodeFonts;
 use nelisp_gui_core::{Backend, BlendMode, Color as GuiColor, Command};
 use tiny_skia::{BlendMode as SkiaBlend, Color, Paint, PathBuilder, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
@@ -20,6 +22,7 @@ pub struct SkiaBackend {
     color: GuiColor,
     cursor: (i32, i32),
     blend: BlendMode,
+    font_size: i32,
 }
 
 impl Default for SkiaBackend {
@@ -30,6 +33,7 @@ impl Default for SkiaBackend {
             color: GuiColor { r: 0, g: 0, b: 0 },
             cursor: (0, 0),
             blend: BlendMode::Normal,
+            font_size: 16,
         }
     }
 }
@@ -68,7 +72,7 @@ impl Backend for SkiaBackend {
             Command::BufferSelect { id } => self.current = *id,
             Command::SetColor(c) => self.color = *c,
             Command::SetBlendMode(m) => self.blend = *m,
-            Command::SetFont { .. } => {} // font handled by the Cairo/Pango backend
+            Command::SetFont { size, .. } => self.font_size = (*size).max(1),
             Command::SetPosition { x, y } => self.cursor = (*x, *y),
             Command::FillRect { x1, y1, x2, y2 } => {
                 let paint = self.paint();
@@ -97,15 +101,33 @@ impl Backend for SkiaBackend {
                 }
             }
             Command::DrawText { text } => {
-                // tiny-skia has no font engine: draw a placeholder underline so the
-                // layout is visible. Real text comes from the Cairo/Pango backend.
-                let (x, y) = self.cursor;
-                let w = (text.chars().count() as i32) * 8;
+                // real glyphs from the pure-Rust 8x8 bitmap font, scaled to the
+                // current font size (~size/8). Each set bit becomes a filled cell.
+                let (x0, y0) = self.cursor;
+                let scale = ((self.font_size + 4) / 8).max(1);
+                let cell = 8 * scale;
                 let paint = self.paint();
-                if let (Some(p), Some(rect)) =
-                    (self.buffers.get_mut(&self.current), Rect::from_xywh(x as f32, (y + 14) as f32, w as f32, 2.0))
-                {
-                    p.fill_rect(rect, &paint, Transform::identity(), None);
+                if let Some(p) = self.buffers.get_mut(&self.current) {
+                    let mut pen_x = x0;
+                    for ch in text.chars() {
+                        if let Some(glyph) = font8x8::BASIC_FONTS.get(ch) {
+                            for (row, bits) in glyph.iter().enumerate() {
+                                for col in 0..8u8 {
+                                    if bits & (1 << col) != 0 {
+                                        if let Some(rect) = Rect::from_xywh(
+                                            (pen_x + col as i32 * scale) as f32,
+                                            (y0 + row as i32 * scale) as f32,
+                                            scale as f32,
+                                            scale as f32,
+                                        ) {
+                                            p.fill_rect(rect, &paint, Transform::identity(), None);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        pen_x += cell;
+                    }
                 }
             }
             Command::DrawImage { src, sx, sy, w, h, dx, dy } => {
@@ -229,5 +251,32 @@ mod tests {
 
         let r = px(b.pixmap(0).unwrap(), 0, 0).0;
         assert_eq!(r, 200, "additive blend summed the two reds (100+100)");
+    }
+
+    /// draw-text rasterises real glyphs (not the old placeholder): a printable
+    /// char sets pixels inside its cell, a space sets none.
+    #[test]
+    fn draw_text_rasterises_glyphs() {
+        let mut b = SkiaBackend::new();
+        b.apply(&Command::Screen { id: 0, w: 16, h: 16, mode: 0 });
+        b.apply(&Command::BufferSelect { id: 0 });
+        b.apply(&Command::SetColor(GuiColor { r: 255, g: 255, b: 255 }));
+        b.apply(&Command::SetFont { name: "sans".into(), size: 8, style: 0 });
+        b.apply(&Command::SetPosition { x: 0, y: 0 });
+        b.apply(&Command::DrawText { text: "A".into() });
+        let p = b.pixmap(0).unwrap();
+        let any_set = (0..8).any(|y| (0..8).any(|x| px(p, x, y).3 > 0));
+        assert!(any_set, "glyph 'A' rasterised at least one pixel");
+
+        // a space glyph is all-zero -> nothing drawn
+        let mut b2 = SkiaBackend::new();
+        b2.apply(&Command::Screen { id: 0, w: 16, h: 16, mode: 0 });
+        b2.apply(&Command::BufferSelect { id: 0 });
+        b2.apply(&Command::SetColor(GuiColor { r: 255, g: 255, b: 255 }));
+        b2.apply(&Command::SetFont { name: "sans".into(), size: 8, style: 0 });
+        b2.apply(&Command::DrawText { text: " ".into() });
+        let p2 = b2.pixmap(0).unwrap();
+        let none_set = (0..16).all(|y| (0..16).all(|x| px(p2, x, y).3 == 0));
+        assert!(none_set, "a space rasterises no pixels");
     }
 }

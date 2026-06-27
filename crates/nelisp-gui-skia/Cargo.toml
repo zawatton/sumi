@@ -8,6 +8,9 @@ license = "CC0-1.0"
 [dependencies]
 nelisp-gui-core = { path = "../nelisp-gui-core" }
 tiny-skia = "0.11"
+# pure-Rust 8x8 bitmap font (public domain) — keeps this backend system-dep-free
+# while still rendering real glyphs (the Cairo backend does high-quality Pango).
+font8x8 = "0.3"
 
 [[bin]]
 name = "nelisp-gui-skia-demo"

@@ -134,6 +134,11 @@ PNG, a webview shell maps =Canvas=. A program never sees this.
   =frame.json= the native Cairo backend renders.
 - *Cairo/GTK4* (=crates/nelisp-gui-cairo/=, Rust + gtk4-rs + cairo-rs). Implements
   the vocabulary against a =gtk::DrawingArea= with Cairo surfaces per buffer.
+- *tiny-skia* (=crates/nelisp-gui-skia/=, pure Rust, *no system deps*). A
+  rasteriser backend for headless PNGs and anywhere GTK isn't available. Text is
+  drawn from a pure-Rust 8x8 bitmap font (=font8x8=) scaled to the font size, so it
+  renders real glyphs without a system font engine; the Cairo backend is the
+  high-quality (Pango) text path.
 
 ** Shells
 
