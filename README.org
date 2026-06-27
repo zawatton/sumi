@@ -21,6 +21,46 @@ generalises that boundary into a reusable library and adds native rendering.
    shell: Electron | Tauri        shell: native GTK4 app
 #+end_example
 
+* Quickstart
+
+Render a frame with *zero system dependencies* (tiny-skia → PNG):
+
+#+begin_src rust
+  use nelisp_gui_core::{demo_frame, Backend};
+  use nelisp_gui_skia::SkiaBackend;
+
+  let mut backend = SkiaBackend::new();
+  backend.apply_all(&demo_frame());           // or your own Vec<Command>
+  backend.pixmap(0).unwrap().save_png("out.png").unwrap();
+#+end_src
+
+Drive it straight from the *command stream* a nelisp program emits — each
+=(name, [i32…], text?)= tuple, parsed through the one contract:
+
+#+begin_src rust
+  use nelisp_gui_core::{parse, Backend};
+
+  let cmds: Vec<_> = stream                    // &[(&str, Vec<i32>, Option<&str>)]
+      .iter()
+      .filter_map(|(name, args, text)| parse(name, args, *text))
+      .collect();
+  backend.apply_all(&cmds);
+#+end_src
+
+Same vocabulary on the web (Canvas backend, Electron/Tauri):
+
+#+begin_src js
+  import { CanvasBackend, parseFrame } from 'nelisp-gui-canvas';
+
+  const make = (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h });
+  const backend = new CanvasBackend(make);
+  backend.applyAll(parseFrame(frame));         // frame = [{name, nums, text?}, …]
+  document.querySelector('canvas').getContext('2d').drawImage(backend.surface(0), 0, 0);
+#+end_src
+
+For a native window instead of a PNG, swap =SkiaBackend= for the Cairo backend and
+host it in a GTK4 =DrawingArea= (see =crates/nelisp-gui-cairo/src/window.rs=).
+
 * Design goals
 
 1. *Backend-agnostic.* The vocabulary is the only contract. Backends are
