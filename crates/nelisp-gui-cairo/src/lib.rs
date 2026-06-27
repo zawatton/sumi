@@ -4,10 +4,10 @@
 //! backend, but on real Cairo `ImageSurface`s with Pango text, hosted in a GTK4
 //! `DrawingArea`. This is the "nelisp GUI library" native target.
 //!
-//! NOT yet wired into the workspace: it needs the GTK4 dev libraries (see
-//! ../../README.org "Setup"). The code below is the concrete mapping the tiny-skia
-//! spike validated, ready to compile once GTK4 is present. Calls are written
-//! against gtk4-rs 0.9 / cairo-rs 0.20; tweak as the toolchain lands.
+//! Builds and runs on this machine against gtk4-rs 0.9 / cairo-rs 0.20 with the
+//! GTK4 dev libraries + a GNU Rust toolchain (see ../../README.org "Setup"). The
+//! bins `nelisp-gui-cairo-demo` (PNG), `nelisp-gui-window` (live GTK4 window) and
+//! `nelisp-gui-frame` (renders a captured game frame) exercise it.
 
 use std::collections::HashMap;
 
@@ -99,27 +99,35 @@ impl Backend for CairoBackend {
                     pangocairo::functions::show_layout(&cr, &layout);
                 }
             }
-            Command::DrawImage { src, sx, sy, dx, dy, .. } => {
-                if let Some(srcsurf) = self.buffers.get(src).cloned() {
-                    if let Some(cr) = self.ctx() {
-                        // place src so that its (sx,sy) lands at the cursor/(dx,dy)
-                        let _ = cr.set_source_surface(&srcsurf, (*dx - *sx) as f64, (*dy - *sy) as f64);
-                        // TODO: clip to (w,h) for a true sub-region blit
-                        let _ = cr.paint();
+            Command::DrawImage { src, sx, sy, w, h, dx, dy } => {
+                if *w > 0 && *h > 0 {
+                    if let Some(srcsurf) = self.buffers.get(src).cloned() {
+                        if let Some(cr) = self.ctx() {
+                            // clip the destination to the (w,h) box so only the
+                            // (sx,sy,w,h) sub-region of src is painted
+                            cr.rectangle(*dx as f64, *dy as f64, *w as f64, *h as f64);
+                            cr.clip();
+                            // place src so that its (sx,sy) lands at (dx,dy)
+                            let _ = cr.set_source_surface(&srcsurf, (*dx - *sx) as f64, (*dy - *sy) as f64);
+                            let _ = cr.paint();
+                        }
                     }
                 }
             }
-            Command::DrawImageScaled { src, dx, dy, sw, sh, dw, dh, .. } => {
-                if let Some(srcsurf) = self.buffers.get(src).cloned() {
-                    if let Some(cr) = self.ctx() {
-                        let (kx, ky) = (
-                            if *sw != 0 { *dw as f64 / *sw as f64 } else { 1.0 },
-                            if *sh != 0 { *dh as f64 / *sh as f64 } else { 1.0 },
-                        );
-                        cr.translate(*dx as f64, *dy as f64);
-                        cr.scale(kx, ky);
-                        let _ = cr.set_source_surface(&srcsurf, 0.0, 0.0);
-                        let _ = cr.paint();
+            Command::DrawImageScaled { src, sx, sy, sw, sh, dx, dy, dw, dh } => {
+                if *sw > 0 && *sh > 0 {
+                    if let Some(srcsurf) = self.buffers.get(src).cloned() {
+                        if let Some(cr) = self.ctx() {
+                            let (kx, ky) = (*dw as f64 / *sw as f64, *dh as f64 / *sh as f64);
+                            cr.translate(*dx as f64, *dy as f64);
+                            cr.scale(kx, ky);
+                            // in scaled space, clip to the source sub-region size (sw,sh)
+                            cr.rectangle(0.0, 0.0, *sw as f64, *sh as f64);
+                            cr.clip();
+                            // align src's (sx,sy) to the clipped origin
+                            let _ = cr.set_source_surface(&srcsurf, -(*sx as f64), -(*sy as f64));
+                            let _ = cr.paint();
+                        }
                     }
                 }
             }

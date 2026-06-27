@@ -124,8 +124,14 @@ vocabularies. Each becomes a backend-agnostic nelisp library:
   commands mapped with none dropped; verified on this machine (=FRAME_EXIT=0=, no
   leftover process). The game's draw vocabulary now renders on a native backend
   with no webview and no Canvas.
-- Next within this phase: honour sub-region blits (=dtw-draw-image=); these need
-  the game's sprite asset pack, which the geometry+text subset does not.
+- *Sub-region blits* (=dtw-draw-image= / =dtw-draw-image-scaled=) are honoured on
+  both backends: only the requested =(sx,sy,w,h)= rectangle is copied (and scaled
+  to =(dw,dh)= for the scaled form), so a blit never spills the rest of the source
+  buffer. Verified by tiny-skia unit tests with pixel assertions
+  (=cargo test -p nelisp-gui-skia=, 2 passing); the Cairo backend mirrors the same
+  clip-then-paint mapping. The full v0 vocabulary now renders on both backends.
+- Remaining within this phase: blend modes on Cairo (=cr.set_operator=, for HSP
+  =gmode= alpha-key sprites); driving real sprite blits needs the game's asset pack.
 
 ** Phase 2 — backend interface in the TS runner
 - Route the renderer's =dtw-*= dispatch through a =GuiBackend= interface.
