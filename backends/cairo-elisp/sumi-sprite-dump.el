@@ -1,22 +1,12 @@
-;; sumi-sprite-live.el — NeLisp AOT LIVE sprite renderer for sumi (no Rust).
-;;
-;; Watches sumi-sprite.bin and re-applies each new frame to PERSISTENT buffers
-;; (allocated once), so a running game streamed through sprite-bridge.js renders
-;; live and natively.  load-image / screen only run when the buffer is empty
-;; (bufsurf[id]==0), so sprite PNGs decode once even though the bridge re-sends
-;; the setup every frame; per-frame draws (clear, blits) re-run each tick.  All
-;; cairo draws are guarded against a null current cr and out-of-range buffer ids
-;; so the varied real-game stream cannot fault.  Buffer 0 is shown in the window.
-;;
-;; Record (96B): [0]op a0..a9 [11]toff.  See sumi-sprite.el for the opcode map.
-;; ctx: 0 loop 8 buf(fixed 4MB) 16 blob_base 24 cmd_base 32 num_cmds 40 i
-;;      48 area 56 bufsurf[1024] 64 bufcr[1024] 72 cur_cr 80 screen_surf
+;; sumi-sprite-dump.el — headless variant of the live renderer: read the current
+;; sumi-sprite.bin, run the SAME process_stream once into persistent buffers, then
+;; write buffer 0 to buffer0.png so the actual composited screen can be inspected.
+;; ctx: 0 -  8 buf  16 blob_base  24 cmd_base  32 num_cmds  40 i
+;;      56 bufsurf[1024]  64 bufcr[1024]  72 cur_cr
 (seq
  (data-blob binpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/sumi-sprite.bin\0" rodata)
+ (data-blob outpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/buffer0.png\0" rodata)
  (data-blob mode_rb "rb\0" rodata)
- (data-blob title   "sumi-sprite-live (NeLisp AOT, live game)\0" rodata)
- (data-blob sig_destroy "destroy\0" rodata)
- (data-blob snappath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/buffer0_live.png\0" rodata)
 
  (defun load_frame (ctx)
    (let ((fp (extern-call fopen (data-addr binpath) (data-addr mode_rb))))
@@ -35,7 +25,6 @@
              (ptr-write-u64 ctx 32 (ptr-read-u64 buf 0))
              0)))))))
 
- ;; Apply one frame's commands to the persistent buffers (fault-guarded).
  (defun process_stream (ctx)
    (let ((cmd_base (ptr-read-u64 ctx 24))
          (blob_base (ptr-read-u64 ctx 16))
@@ -59,8 +48,6 @@
                             (ptr-write-u64 (+ bufsurf (* id 8)) 0 surf)
                             (ptr-write-u64 (+ bufcr (* id 8)) 0 (extern-call cairo_create surf))
                             0))
-                       ;; existing screen/scratch buffer: clear it each frame so
-                       ;; translucent blits don't accumulate across ticks.
                        (let ((cr (ptr-read-u64 (+ bufcr (* id 8)) 0)))
                          (seq
                           (extern-call cairo_save cr)
@@ -169,36 +156,6 @@
          (ptr-write-u64 ctx 40 (+ (ptr-read-u64 ctx 40) 1))))
       0)))
 
- (defun on_tick (ctx)
-   (seq
-    (load_frame ctx)
-    (process_stream ctx)
-    (ptr-write-u64 ctx 80 (ptr-read-u64 (ptr-read-u64 ctx 56) 0))
-    (extern-call gtk_widget_queue_draw (ptr-read-u64 ctx 48))
-    1))
-
- (defun on_draw (area cr width height ctx)
-   (seq
-    (if (= (ptr-read-u64 ctx 80) 0)
-        0
-      (seq
-       (extern-call cairo_surface_flush (ptr-read-u64 ctx 80))
-       (extern-call cairo_set_source_surface cr (ptr-read-u64 ctx 80) (:f64 0.0) (:f64 0.0))
-       (extern-call cairo_paint cr)))
-    0))
-
- (defun on_snapshot (ctx)
-   (let ((s0 (ptr-read-u64 (ptr-read-u64 ctx 56) 0)))
-     (seq
-      (extern-call cairo_surface_flush s0)
-      (extern-call cairo_surface_write_to_png s0 (data-addr snappath))
-      1)))
-
- (defun on_quit (ctx)
-   (seq (extern-call g_main_loop_quit (ptr-read-u64 ctx 0)) 0))
- (defun on_destroy (widget ctx)
-   (seq (extern-call g_main_loop_quit (ptr-read-u64 ctx 0)) 0))
-
  (defun main ()
    (seq
     (extern-call gtk_init)
@@ -214,25 +171,12 @@
        (ptr-write-u64 ctx 88 4607182418800017408)
        (load_frame ctx)
        (process_stream ctx)
-       (ptr-write-u64 ctx 80 (ptr-read-u64 bufsurf 0))
-       (let ((window (extern-call gtk_window_new)))
+       (process_stream ctx)
+       (process_stream ctx)
+       (process_stream ctx)
+       (process_stream ctx)
+       (let ((s0 (ptr-read-u64 bufsurf 0)))
          (seq
-          (extern-call gtk_window_set_title window (data-addr title))
-          (extern-call gtk_window_set_default_size window
-                       (ptr-read-u64 buf 8) (ptr-read-u64 buf 16))
-          (let ((area (extern-call gtk_drawing_area_new))
-                (loop (extern-call g_main_loop_new 0 0)))
-            (seq
-             (ptr-write-u64 ctx 0 loop)
-             (ptr-write-u64 ctx 48 area)
-             (extern-call gtk_widget_set_size_request area
-                          (ptr-read-u64 buf 8) (ptr-read-u64 buf 16))
-             (extern-call gtk_drawing_area_set_draw_func area (addr-of on_draw) ctx 0)
-             (extern-call gtk_window_set_child window area)
-             (extern-call g_signal_connect_data
-                          window (data-addr sig_destroy) (addr-of on_destroy) ctx 0 0)
-             (extern-call g_timeout_add 50 (addr-of on_tick) ctx)
-             (extern-call g_timeout_add 300000 (addr-of on_quit) ctx)
-             (extern-call gtk_window_present window)
-             (extern-call g_main_loop_run loop)
-             0)))))))))
+          (extern-call cairo_surface_flush s0)
+          (extern-call cairo_surface_write_to_png s0 (data-addr outpath))
+          0)))))))
