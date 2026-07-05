@@ -131,7 +131,11 @@ function writeHead(seq) {
 }
 
 function pruneBins(head) {
-  const cutoff = head - 33;
+  // Keep a deep horizon: scenes compose into work canvases across frames,
+  // so a window that (re)joins mid-session must replay from bin 1 or it
+  // shows empty canvases (gray screen).  ~20k bins x ~10KB ≈ 200MB max,
+  // and the window catches up at ~1280 bins/s.
+  const cutoff = head - 20000;
   if (cutoff <= 0) return;
   const prunePath = `${seqPrefix}${String(cutoff).padStart(6, '0')}.bin`;
   try { fs.unlinkSync(prunePath); } catch (_err) { /* ignore best-effort prune */ }
