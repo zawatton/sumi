@@ -7,6 +7,7 @@
  (data-blob binpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/sumi-sprite.bin\0" rodata)
  (data-blob outpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/buffer0.png\0" rodata)
  (data-blob mode_rb "rb\0" rodata)
+ (data-blob font_meiryo "Meiryo\0" rodata)
 
  (defun load_frame (ctx)
    (let ((fp (extern-call fopen (data-addr binpath) (data-addr mode_rb))))
@@ -43,10 +44,13 @@
                  (if (< id 1024)
                      (if (= (ptr-read-u64 (+ bufsurf (* id 8)) 0) 0)
                          (let ((surf (extern-call cairo_image_surface_create 0
-                                                  (ptr-read-u64 rec 16) (ptr-read-u64 rec 24))))
+                                                  (ptr-read-u64 rec 16) (ptr-read-u64 rec 24)))
+                               (cr 0))
                            (seq
+                            (setq cr (extern-call cairo_create surf))
                             (ptr-write-u64 (+ bufsurf (* id 8)) 0 surf)
-                            (ptr-write-u64 (+ bufcr (* id 8)) 0 (extern-call cairo_create surf))
+                            (ptr-write-u64 (+ bufcr (* id 8)) 0 cr)
+                            (extern-call cairo_select_font_face cr (data-addr font_meiryo) 0 0)
                             0))
                        (let ((cr (ptr-read-u64 (+ bufcr (* id 8)) 0)))
                          (seq
@@ -61,10 +65,13 @@
                  (if (< id 1024)
                      (if (= (ptr-read-u64 (+ bufsurf (* id 8)) 0) 0)
                          (let ((surf (extern-call cairo_image_surface_create_from_png
-                                                  (+ blob_base (- (ptr-read-u64 rec 88) 1)))))
+                                                  (+ blob_base (- (ptr-read-u64 rec 88) 1))))
+                               (cr 0))
                            (seq
+                            (setq cr (extern-call cairo_create surf))
                             (ptr-write-u64 (+ bufsurf (* id 8)) 0 surf)
-                            (ptr-write-u64 (+ bufcr (* id 8)) 0 (extern-call cairo_create surf))
+                            (ptr-write-u64 (+ bufcr (* id 8)) 0 cr)
+                            (extern-call cairo_select_font_face cr (data-addr font_meiryo) 0 0)
                             0))
                        0)
                    0)))
