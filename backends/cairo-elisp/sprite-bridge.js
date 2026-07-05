@@ -25,6 +25,9 @@ const outPath = process.argv[3] || path.join(__dirname, 'sumi-sprite.bin');
 const imgDir = process.argv[4] ||
   path.resolve(__dirname, '../../../newDTW-nelisp/assets/img');
 const tmp = outPath + '.tmp';
+const headPath = path.join(path.dirname(outPath), 'sumi-sprite-head.txt');
+const headTmp = headPath + '.tmp';
+const seqPrefix = path.join(path.dirname(outPath), 'sumi-sprite-');
 
 const f64 = (x) => { const b = Buffer.alloc(8); b.writeDoubleLE(Number(x) || 0, 0); return b.readBigUInt64LE(0); };
 const u64 = (x) => BigInt.asUintN(64, BigInt(Math.trunc(Number(x) || 0)));
@@ -105,6 +108,35 @@ function pack(cmds) {
   return Buffer.concat([hdr, blob, cb]);
 }
 
+function isBusyRenameError(err) {
+  return err && (err.code === 'EPERM' || err.code === 'EBUSY');
+}
+
+function renameWithRetry(from, to, attempts = 8) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      fs.renameSync(from, to);
+      return true;
+    } catch (err) {
+      if (!isBusyRenameError(err) || i === attempts - 1) throw err;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  }
+  return false;
+}
+
+function writeHead(seq) {
+  fs.writeFileSync(headTmp, `${seq}\n`);
+  renameWithRetry(headTmp, headPath);
+}
+
+function pruneBins(head) {
+  const cutoff = head - 33;
+  if (cutoff <= 0) return;
+  const prunePath = `${seqPrefix}${String(cutoff).padStart(6, '0')}.bin`;
+  try { fs.unlinkSync(prunePath); } catch (_err) { /* ignore best-effort prune */ }
+}
+
 // cumulative setup, keyed by buffer id, prepended to every frame.
 const screens = new Map();   // id -> {name,nums}
 const images = new Map();    // id -> {name,nums,text}
@@ -119,8 +151,8 @@ function setupCmds() {
   return out;
 }
 
-let frames = 0, last = 0, current = 0, currentAlpha = 255;
-function onFrame(cmds) {
+let frames = 0, current = 0, currentAlpha = 255;
+function onFrame(cmds, seq) {
   const startSel = current;             // buffer selected at end of previous frame
   const startAlpha = currentAlpha;      // alpha (gmode) carried from previous frame
   const draw = [];
@@ -134,21 +166,28 @@ function onFrame(cmds) {
       draw.push(c);
     }
   }
-  const now = Date.now();
-  if (now - last < 30) return;          // throttle ~30 fps
-  last = now;
   // prepend the carried selection + alpha so draws before this frame's first
   // select/gmode use the state the game held at the end of the previous frame.
   const out = setupCmds();
   out.push({ name: 'gui-select-buffer', nums: [startSel] });
   out.push({ name: 'gui-set-alpha', nums: [startAlpha] });
   for (const c of draw) out.push(c);
-  try { fs.writeFileSync(tmp, pack(out)); fs.renameSync(tmp, outPath); frames++; }
+  try {
+    const packed = pack(out);
+    const seqPath = `${seqPrefix}${String(seq).padStart(6, '0')}.bin`;
+    fs.writeFileSync(seqPath, packed);
+    fs.writeFileSync(tmp, packed);
+    fs.renameSync(tmp, outPath);
+    writeHead(seq);
+    pruneBins(seq);
+    frames++;
+  }
   catch (_e) { /* transient sharing violation / drop on error */ }
 }
 
 const server = net.createServer((sock) => {
   console.error(`game connected from ${sock.remoteAddress}:${sock.remotePort}`);
+  let seq = 0;
   let buf = '';
   sock.on('data', (chunk) => {
     buf += chunk.toString('utf8');
@@ -156,7 +195,11 @@ const server = net.createServer((sock) => {
     while ((nl = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
       if (!line.trim()) continue;
-      try { onFrame(JSON.parse(line)); } catch (_e) { /* skip malformed line */ }
+      try {
+        const frame = JSON.parse(line);
+        seq += 1;
+        onFrame(frame, seq);
+      } catch (_e) { /* skip malformed line */ }
     }
   });
   sock.on('close', () => console.error(`game disconnected (${frames} frames, ${screens.size} screens, ${images.size} images)`));

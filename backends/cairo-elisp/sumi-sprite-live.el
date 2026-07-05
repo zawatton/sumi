@@ -11,10 +11,13 @@
 ;; Record (96B): [0]op a0..a9 [11]toff.  See sumi-sprite.el for the opcode map.
 ;; ctx: 0 loop 8 buf(fixed 4MB) 16 blob_base 24 cmd_base 32 num_cmds 40 i
 ;;      48 area 56 bufsurf[1024] 64 bufcr[1024] 72 cur_cr 80 screen_surf
-;;      88 alpha_bits 96 key_seq 104 held_keycode 112 key_state_path 120 reserved
-;;      128 key_state_scratch[256]
+;;      88 alpha_bits 96 key_seq 104 held_keycode 112 key_state_path
+;;      120 last_applied 128 scratch[256]
 (seq
  (data-blob binpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/sumi-sprite.bin\0" rodata)
+ (data-blob headpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/sumi-sprite-head.txt\0" rodata)
+ (data-blob seqprefix "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/sumi-sprite-\0" rodata)
+ (data-blob seqsuffix ".bin\0" rodata)
  (data-blob mode_rb "rb\0" rodata)
  (data-blob mode_wb "wb\0" rodata)
  (data-blob title   "sumi-sprite-live (NeLisp AOT, live game)\0" rodata)
@@ -73,6 +76,17 @@
         (ptr-write-u8 dst len (+ 48 (mod n 10)))
         (+ len 1)))))
 
+ (defun parse_u64_dec (src)
+   (let ((i 0)
+         (n 0)
+         (b 0))
+     (seq
+      (while (and (>= (setq b (ptr-read-u8 src i)) 48) (<= b 57))
+        (seq
+         (setq n (+ (* n 10) (- b 48)))
+         (setq i (+ i 1))))
+      n)))
+
  (defun write_key_state (ctx keycode)
    (let ((path (ptr-read-u64 ctx 112)))
      (if (= path 0)
@@ -112,8 +126,8 @@
               (extern-call fclose fp)
               0)))))))
 
- (defun load_frame (ctx)
-   (let ((fp (extern-call fopen (data-addr binpath) (data-addr mode_rb))))
+ (defun load_frame (ctx path)
+   (let ((fp (extern-call fopen path (data-addr mode_rb))))
      (if (= fp 0)
          0
        (let ((buf (ptr-read-u64 ctx 8)))
@@ -127,7 +141,41 @@
              (ptr-write-u64 ctx 16 (+ buf (ptr-read-u64 buf 24)))
              (ptr-write-u64 ctx 24 (+ buf (ptr-read-u64 buf 32)))
              (ptr-write-u64 ctx 32 (ptr-read-u64 buf 0))
-             0)))))))
+             1)))))))
+
+ (defun read_head (ctx)
+   (let ((fp (extern-call fopen (data-addr headpath) (data-addr mode_rb))))
+     (if (= fp 0)
+         0
+       (let ((buf (+ ctx 128)))
+         (seq
+          (let ((nread (extern-call fread buf 1 255 fp)))
+            (ptr-write-u8 buf nread 0))
+          (extern-call fclose fp)
+          (parse_u64_dec buf))))))
+
+ (defun build_seq_path (ctx n)
+   (let ((dst (+ ctx 128))
+         (off 0))
+     (seq
+      (setq off (copy_cstr dst (data-addr seqprefix)))
+      (let ((d0 (/ n 100000))
+            (d1 (mod (/ n 10000) 10))
+            (d2 (mod (/ n 1000) 10))
+            (d3 (mod (/ n 100) 10))
+            (d4 (mod (/ n 10) 10))
+            (d5 (mod n 10)))
+        (seq
+         (ptr-write-u8 dst off (+ 48 d0))
+         (ptr-write-u8 dst (+ off 1) (+ 48 d1))
+         (ptr-write-u8 dst (+ off 2) (+ 48 d2))
+         (ptr-write-u8 dst (+ off 3) (+ 48 d3))
+         (ptr-write-u8 dst (+ off 4) (+ 48 d4))
+         (ptr-write-u8 dst (+ off 5) (+ 48 d5))
+         (setq off (+ off 6))))
+      (setq off (+ off (copy_cstr (+ dst off) (data-addr seqsuffix))))
+      (ptr-write-u8 dst off 0)
+      dst)))
 
  ;; Apply one frame's commands to the persistent buffers (fault-guarded).
  (defun process_stream (ctx)
@@ -274,11 +322,38 @@
     (if (> (ptr-read-u64 ctx 104) 0)
         (write_key_state ctx (ptr-read-u64 ctx 104))
       0)
-    (load_frame ctx)
-    (process_stream ctx)
+    (let ((head (read_head ctx)))
+      (if (= head 0)
+          (seq
+           (load_frame ctx (data-addr binpath))
+           (process_stream ctx))
+        (seq
+         ;; The bridge numbers bins per connection; a head below our
+         ;; last_applied means a new session started — resync from 0.
+         (if (< head (ptr-read-u64 ctx 120))
+             (ptr-write-u64 ctx 120 0)
+           0)
+         (let ((applied 0)
+              (next (+ (ptr-read-u64 ctx 120) 1)))
+          (seq
+           (while (and (<= next head) (< applied 64))
+             (seq
+              ;; AOT dialect constraint: never nest a user-function call
+              ;; inside another call's argument list or a primitive
+              ;; comparison — bind results to locals first (the fallback
+              ;; path and read_head already follow this shape).
+              (let ((seqpath (build_seq_path ctx next)))
+                (let ((lfres (load_frame ctx seqpath)))
+                  (if (= lfres 0)
+                      (ptr-write-u64 ctx 120 next)
+                    (seq
+                     (process_stream ctx)
+                     (ptr-write-u64 ctx 120 next)))))
+              (setq next (+ next 1))
+              (setq applied (+ applied 1))))))))
     (ptr-write-u64 ctx 80 (ptr-read-u64 (ptr-read-u64 ctx 56) 0))
     (extern-call gtk_widget_queue_draw (ptr-read-u64 ctx 48))
-    1))
+    1)))
 
  (defun on_key_pressed (controller keyval keycode state ctx)
    (let ((mapped (map_keyval keyval)))
@@ -337,9 +412,10 @@
        (ptr-write-u64 ctx 88 4607182418800017408)
        (ptr-write-u64 ctx 96 0)
        (ptr-write-u64 ctx 104 0)
+       (ptr-write-u64 ctx 120 0)
        (ptr-write-u64 ctx 112 (let ((p (extern-call getenv (data-addr env_key_state))))
                                 (if (= p 0) (data-addr default_key_state) p)))
-       (load_frame ctx)
+       (load_frame ctx (data-addr binpath))
        (process_stream ctx)
        (ptr-write-u64 ctx 80 (ptr-read-u64 bufsurf 0))
        (let ((window (extern-call gtk_window_new)))
