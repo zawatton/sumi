@@ -365,7 +365,7 @@
              (extern-call g_signal_connect_data
                           window (data-addr sig_destroy) (addr-of on_destroy) ctx 0 0)
              (extern-call g_timeout_add 50 (addr-of on_tick) ctx)
-             (extern-call g_timeout_add 300000 (addr-of on_quit) ctx)
+             (extern-call g_timeout_add 1800000 (addr-of on_quit) ctx)
              (extern-call gtk_window_present window)
              (extern-call g_main_loop_run loop)
              0)))))))))
