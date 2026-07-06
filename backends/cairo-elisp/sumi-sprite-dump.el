@@ -2,7 +2,8 @@
 ;; sumi-sprite.bin, run the SAME process_stream once into persistent buffers, then
 ;; write buffer 0 to buffer0.png so the actual composited screen can be inspected.
 ;; ctx: 0 -  8 buf  16 blob_base  24 cmd_base  32 num_cmds  40 i
-;;      56 bufsurf[1024]  64 bufcr[1024]  72 cur_cr
+;;      56 bufsurf[1024]  64 bufcr[1024]  72 cur_cr  88 alpha_bits
+;;      96 color_r_bits 104 color_g_bits 112 color_b_bits
 (seq
  (data-blob binpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/sumi-sprite.bin\0" rodata)
  (data-blob outpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/buffer0.png\0" rodata)
@@ -25,6 +26,13 @@
              (ptr-write-u64 ctx 24 (+ buf (ptr-read-u64 buf 32)))
              (ptr-write-u64 ctx 32 (ptr-read-u64 buf 0))
              0)))))))
+
+ (defun apply_source_rgba (ctx cr)
+   (extern-call cairo_set_source_rgba cr
+                (:f64 (bits-to-f64 (ptr-read-u64 ctx 96)))
+                (:f64 (bits-to-f64 (ptr-read-u64 ctx 104)))
+                (:f64 (bits-to-f64 (ptr-read-u64 ctx 112)))
+                (:f64 (bits-to-f64 (ptr-read-u64 ctx 88)))))
 
  (defun process_stream (ctx)
    (let ((cmd_base (ptr-read-u64 ctx 24))
@@ -81,13 +89,19 @@
                      (ptr-write-u64 ctx 72 (ptr-read-u64 (+ bufcr (* id 8)) 0))
                    (ptr-write-u64 ctx 72 0))))
               ((= op 13)
-               (ptr-write-u64 ctx 88 (ptr-read-u64 rec 8)))
+               (seq
+                (ptr-write-u64 ctx 88 (ptr-read-u64 rec 8))
+                (let ((cr (ptr-read-u64 ctx 72)))
+                  (if (= cr 0) 0
+                    (apply_source_rgba ctx cr)))))
               ((= op 2)
-               (if (= (ptr-read-u64 ctx 72) 0) 0
-                 (extern-call cairo_set_source_rgb (ptr-read-u64 ctx 72)
-                              (:f64 (bits-to-f64 (ptr-read-u64 rec 8)))
-                              (:f64 (bits-to-f64 (ptr-read-u64 rec 16)))
-                              (:f64 (bits-to-f64 (ptr-read-u64 rec 24))))))
+               (seq
+                (ptr-write-u64 ctx 96 (ptr-read-u64 rec 8))
+                (ptr-write-u64 ctx 104 (ptr-read-u64 rec 16))
+                (ptr-write-u64 ctx 112 (ptr-read-u64 rec 24))
+                (let ((cr (ptr-read-u64 ctx 72)))
+                  (if (= cr 0) 0
+                    (apply_source_rgba ctx cr)))))
               ((= op 5)
                (if (= (ptr-read-u64 ctx 72) 0) 0
                  (seq
@@ -166,7 +180,7 @@
  (defun main ()
    (seq
     (extern-call gtk_init)
-    (let ((ctx (extern-call malloc 96))
+    (let ((ctx (extern-call malloc 120))
           (buf (extern-call malloc 4194304))
           (bufsurf (extern-call calloc 1024 8))
           (bufcr (extern-call calloc 1024 8)))
@@ -176,6 +190,9 @@
        (ptr-write-u64 ctx 64 bufcr)
        (ptr-write-u64 ctx 72 0)
        (ptr-write-u64 ctx 88 4607182418800017408)
+       (ptr-write-u64 ctx 96 0)
+       (ptr-write-u64 ctx 104 0)
+       (ptr-write-u64 ctx 112 0)
        (load_frame ctx)
        (process_stream ctx)
        (process_stream ctx)

@@ -12,7 +12,8 @@
 ;; ctx: 0 loop 8 buf(fixed 4MB) 16 blob_base 24 cmd_base 32 num_cmds 40 i
 ;;      48 area 56 bufsurf[1024] 64 bufcr[1024] 72 cur_cr 80 screen_surf
 ;;      88 alpha_bits 96 key_seq 104 held_keycode 112 key_state_path
-;;      120 last_applied 128 scratch[256]
+;;      120 last_applied 128 color_r_bits 136 color_g_bits 144 color_b_bits
+;;      152 scratch[256]
 (seq
  (data-blob binpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/sumi-sprite.bin\0" rodata)
  (data-blob headpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/sumi-sprite-head.txt\0" rodata)
@@ -94,7 +95,7 @@
        (let ((fp (extern-call fopen path (data-addr mode_wb))))
          (if (= fp 0)
              0
-           (let ((buf (+ ctx 128))
+           (let ((buf (+ ctx 152))
                  (off 0)
                  (seqno (+ (ptr-read-u64 ctx 96) 1))
                  (token (token_ptr_for_keycode keycode)))
@@ -147,7 +148,7 @@
    (let ((fp (extern-call fopen (data-addr headpath) (data-addr mode_rb))))
      (if (= fp 0)
          0
-       (let ((buf (+ ctx 128)))
+       (let ((buf (+ ctx 152)))
          (seq
           (let ((nread (extern-call fread buf 1 255 fp)))
             (ptr-write-u8 buf nread 0))
@@ -155,7 +156,7 @@
           (parse_u64_dec buf))))))
 
  (defun build_seq_path (ctx n)
-   (let ((dst (+ ctx 128))
+   (let ((dst (+ ctx 152))
          (off 0))
      (seq
       (setq off (copy_cstr dst (data-addr seqprefix)))
@@ -176,6 +177,13 @@
       (setq off (+ off (copy_cstr (+ dst off) (data-addr seqsuffix))))
       (ptr-write-u8 dst off 0)
       dst)))
+
+ (defun apply_source_rgba (ctx cr)
+   (extern-call cairo_set_source_rgba cr
+                (:f64 (bits-to-f64 (ptr-read-u64 ctx 128)))
+                (:f64 (bits-to-f64 (ptr-read-u64 ctx 136)))
+                (:f64 (bits-to-f64 (ptr-read-u64 ctx 144)))
+                (:f64 (bits-to-f64 (ptr-read-u64 ctx 88)))))
 
  ;; Apply one frame's commands to the persistent buffers (fault-guarded).
  (defun process_stream (ctx)
@@ -235,13 +243,19 @@
                      (ptr-write-u64 ctx 72 (ptr-read-u64 (+ bufcr (* id 8)) 0))
                    (ptr-write-u64 ctx 72 0))))
               ((= op 13)
-               (ptr-write-u64 ctx 88 (ptr-read-u64 rec 8)))
+               (seq
+                (ptr-write-u64 ctx 88 (ptr-read-u64 rec 8))
+                (let ((cr (ptr-read-u64 ctx 72)))
+                  (if (= cr 0) 0
+                    (apply_source_rgba ctx cr)))))
               ((= op 2)
-               (if (= (ptr-read-u64 ctx 72) 0) 0
-                 (extern-call cairo_set_source_rgb (ptr-read-u64 ctx 72)
-                              (:f64 (bits-to-f64 (ptr-read-u64 rec 8)))
-                              (:f64 (bits-to-f64 (ptr-read-u64 rec 16)))
-                              (:f64 (bits-to-f64 (ptr-read-u64 rec 24))))))
+               (seq
+                (ptr-write-u64 ctx 128 (ptr-read-u64 rec 8))
+                (ptr-write-u64 ctx 136 (ptr-read-u64 rec 16))
+                (ptr-write-u64 ctx 144 (ptr-read-u64 rec 24))
+                (let ((cr (ptr-read-u64 ctx 72)))
+                  (if (= cr 0) 0
+                    (apply_source_rgba ctx cr)))))
               ((= op 5)
                (if (= (ptr-read-u64 ctx 72) 0) 0
                  (seq
@@ -400,7 +414,7 @@
  (defun main ()
    (seq
     (extern-call gtk_init)
-    (let ((ctx (extern-call malloc 384))
+    (let ((ctx (extern-call malloc 408))
           (buf (extern-call malloc 4194304))
           (bufsurf (extern-call calloc 1024 8))
           (bufcr (extern-call calloc 1024 8)))
@@ -410,6 +424,9 @@
        (ptr-write-u64 ctx 64 bufcr)
        (ptr-write-u64 ctx 72 0)
        (ptr-write-u64 ctx 88 4607182418800017408)
+       (ptr-write-u64 ctx 128 0)
+       (ptr-write-u64 ctx 136 0)
+       (ptr-write-u64 ctx 144 0)
        (ptr-write-u64 ctx 96 0)
        (ptr-write-u64 ctx 104 0)
        (ptr-write-u64 ctx 120 0)

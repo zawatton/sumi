@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 BACKEND_DIR="$ROOT/backends/cairo-elisp"
 MINGW_BIN="${MINGW_BIN:-/c/msys64/mingw64/bin}"
 export PATH="$MINGW_BIN:$PATH"
-export HOME="/tmp/sumi-emacs-home"
+export HOME=".tmp-home/sumi-emacs-home"
 mkdir -p "$HOME"
 
 to_win () { cygpath -m "$1" 2>/dev/null || echo "$1"; }
