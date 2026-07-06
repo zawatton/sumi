@@ -178,8 +178,13 @@ function onFrame(cmds, seq) {
   for (const c of draw) out.push(c);
   try {
     const packed = pack(out);
+    // Sequenced bins must land atomically: the window's watch tick reads
+    // them as soon as the head advances, and a torn read of a half-written
+    // header sends process_stream chasing wild pointers (observed crash).
     const seqPath = `${seqPrefix}${String(seq).padStart(6, '0')}.bin`;
-    fs.writeFileSync(seqPath, packed);
+    const seqTmp = `${seqPath}.tmp`;
+    fs.writeFileSync(seqTmp, packed);
+    renameWithRetry(seqTmp, seqPath);
     fs.writeFileSync(tmp, packed);
     fs.renameSync(tmp, outPath);
     writeHead(seq);
