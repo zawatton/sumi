@@ -625,7 +625,11 @@
         (ptr-write-u64 ctx 184 (data-addr default_key_state)))
       (setq selftest_n (extern-call GetEnvironmentVariableA
                                     (data-addr env_key_selftest) (+ ctx 224) 255))
-      (if (= selftest_n 0)
+      ;; The env-gated key self-test (SUMI_KEY_SELFTEST) fired even with the
+      ;; variable unset — the AOT env read was unreliable — closing the play
+      ;; window immediately.  The self-test served only codex's one-off
+      ;; verification, so always run the normal window path now.
+      (if (= 0 0)
           (seq
            (extern-call gtk_init)
            (load_frame ctx (data-addr binpath))
