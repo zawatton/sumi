@@ -352,6 +352,9 @@
                 (:f64 (bits-to-f64 (ptr-read-u64 ctx 216)))
                 (:f64 (bits-to-f64 (ptr-read-u64 ctx 88)))))
 
+ (defun clear_every_frame_buffer_p (id)
+   (or (= id 0) (= id 4) (= id 7) (= id 10) (= id 32)))
+
  ;; Apply one frame's commands to the persistent buffers (fault-guarded).
  (defun process_stream (ctx)
    (let ((cmd_base (ptr-read-u64 ctx 24))
@@ -386,11 +389,11 @@
                             (extern-call cairo_select_font_face cr (data-addr font_meiryo) 0 0)
                             0))
                        ;; The bridge repeats gui-screen every frame only to
-                       ;; guarantee surface existence.  Buffer 0 is the
-                       ;; composited output and must clear each tick; scratch
-                       ;; buffers like 10/12 must persist until game code
-                       ;; redraws them explicitly.
-                         (if (= id 0)
+                       ;; guarantee surface existence.  Some work buffers are
+                       ;; genuinely per-frame canvases (screen, overlays,
+                       ;; scratch composites) and must clear on every replayed
+                       ;; gui-screen or stale pixels leak into later frames.
+                         (if (clear_every_frame_buffer_p id)
                              (let ((cr (ptr-read-u64 (+ bufcr (* id 8)) 0)))
                                (seq
                                 (extern-call cairo_save cr)
