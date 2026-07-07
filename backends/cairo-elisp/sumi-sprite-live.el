@@ -377,18 +377,29 @@
                             (setq cr (extern-call cairo_create surf))
                             (ptr-write-u64 (+ bufsurf (* id 8)) 0 surf)
                             (ptr-write-u64 (+ bufcr (* id 8)) 0 cr)
+                            ;; Fresh work buffers must start transparent so an
+                            ;; untouched scratch canvas blits as a no-op.
+                            (extern-call cairo_save cr)
+                            (extern-call cairo_set_operator cr 0)
+                            (extern-call cairo_paint cr)
+                            (extern-call cairo_restore cr)
                             (extern-call cairo_select_font_face cr (data-addr font_meiryo) 0 0)
                             0))
-                       ;; existing screen/scratch buffer: clear it each frame so
-                       ;; translucent blits don't accumulate across ticks.
-                       (let ((cr (ptr-read-u64 (+ bufcr (* id 8)) 0)))
-                         (seq
-                          (extern-call cairo_save cr)
-                          (extern-call cairo_set_operator cr 0)
-                          (extern-call cairo_paint cr)
-                          (extern-call cairo_restore cr)
-                          0)))
-                   0)))
+                       ;; The bridge repeats gui-screen every frame only to
+                       ;; guarantee surface existence.  Buffer 0 is the
+                       ;; composited output and must clear each tick; scratch
+                       ;; buffers like 10/12 must persist until game code
+                       ;; redraws them explicitly.
+                         (if (= id 0)
+                             (let ((cr (ptr-read-u64 (+ bufcr (* id 8)) 0)))
+                               (seq
+                                (extern-call cairo_save cr)
+                                (extern-call cairo_set_operator cr 0)
+                                (extern-call cairo_paint cr)
+                                (extern-call cairo_restore cr)
+                                0))
+                           0))
+                    0)))
               ((= op 10)
                (let ((id (ptr-read-u64 rec 8)))
                  (if (< id 1024)
@@ -533,6 +544,7 @@
                (setq applied (+ applied 1))))))))
     (ptr-write-u64 ctx 80 (ptr-read-u64 (ptr-read-u64 ctx 56) 0))
     (extern-call gtk_widget_queue_draw (ptr-read-u64 ctx 48))
+    (on_snapshot ctx)
     1)))
 
  (defun on_key_pressed (controller keyval keycode state ctx)
