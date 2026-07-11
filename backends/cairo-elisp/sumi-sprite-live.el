@@ -1,10 +1,10 @@
-;; sumi-sprite-live.el — NeLisp AOT LIVE sprite renderer for sumi (no Rust).
+;; sumi-sprite-live.el - NeLisp AOT live sprite renderer for sumi.
 ;;
 ;; Watches sumi-sprite.bin and re-applies each new frame to PERSISTENT buffers
-;; (allocated once), so a running game streamed through sprite-bridge.js renders
-;; live and natively.  load-image / screen only run when the buffer is empty
-;; (bufsurf[id]==0), so sprite PNGs decode once even though the bridge re-sends
-;; the setup every frame; per-frame draws (clear, blits) re-run each tick.  All
+;; (allocated once), so the NeLisp/Elisp live feed renders natively.  load-image
+;; / screen only run when the buffer is empty (bufsurf[id]==0), so sprite PNGs
+;; decode once even though the feed re-sends the setup every frame; per-frame
+;; draws (clear, blits) re-run each tick.  All
 ;; cairo draws are guarded against a null current cr and out-of-range buffer ids
 ;; so the varied real-game stream cannot fault.  Buffer 0 is shown in the window.
 ;;
@@ -14,7 +14,9 @@
 ;;      88 alpha_bits 96 key_seq 104 held_count 112 held_keys[8]
 ;;      176 active_keycode 184 key_state_path 192 last_applied
 ;;      200 color_r_bits 208 color_g_bits 216 color_b_bits
-;;      224 scratch[256]
+;;      224 scratch[288]
+;;      512 window 520 output_w 528 output_h 536 hwnd 544 f1_down
+;;      552 resize_seen 560 selftest_env[208]
 (seq
  (data-blob binpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/sumi-sprite.bin\0" rodata)
  (data-blob headpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/sumi-sprite-head.txt\0" rodata)
@@ -48,6 +50,18 @@
     ((= keyval 65364) 40)
     ((= keyval 65293) 13)
     ((or (= keyval 65505) (= keyval 65506)) 16)
+    ((= keyval 65470) 112)
+    ((= keyval 65471) 113)
+    ((= keyval 65472) 114)
+    ((= keyval 65473) 115)
+    ((= keyval 65474) 116)
+    ((= keyval 65475) 117)
+    ((= keyval 65476) 118)
+    ((= keyval 65477) 119)
+    ((= keyval 65478) 120)
+    ((= keyval 65479) 121)
+    ((= keyval 65480) 122)
+    ((= keyval 65481) 123)
     ((and (>= keyval 97) (<= keyval 122)) (- keyval 32))
     ((and (>= keyval 65) (<= keyval 90)) keyval)
     ((and (>= keyval 48) (<= keyval 57)) keyval)
@@ -302,14 +316,32 @@
          (seq
           (extern-call fseek fp 0 2)
           (let ((size (extern-call ftell fp)))
-            (seq
-             (extern-call fseek fp 0 0)
-             (extern-call fread buf 1 size fp)
-             (extern-call fclose fp)
-             (ptr-write-u64 ctx 16 (+ buf (ptr-read-u64 buf 24)))
-             (ptr-write-u64 ctx 24 (+ buf (ptr-read-u64 buf 32)))
-             (ptr-write-u64 ctx 32 (ptr-read-u64 buf 0))
-             1)))))))
+            (if (or (< size 40) (> size 4194304))
+                (seq
+                 (extern-call fclose fp)
+                 0)
+              (seq
+               (extern-call fseek fp 0 0)
+               (let ((nread (extern-call fread buf 1 size fp)))
+                 (seq
+                  (extern-call fclose fp)
+                  (if (not (= nread size))
+                      0
+                    (let ((ncmd (ptr-read-u64 buf 0))
+                          (blob_off (ptr-read-u64 buf 24))
+                          (cmd_off (ptr-read-u64 buf 32)))
+                      (if (or (< blob_off 40)
+                              (< cmd_off blob_off)
+                              (> blob_off size)
+                              (> cmd_off size)
+                              (> ncmd 50000)
+                              (> (+ cmd_off (* ncmd 96)) size))
+                          0
+                        (seq
+                         (ptr-write-u64 ctx 16 (+ buf blob_off))
+                         (ptr-write-u64 ctx 24 (+ buf cmd_off))
+                         (ptr-write-u64 ctx 32 ncmd)
+                         1))))))))))))))
 
  (defun read_head (ctx)
    (let ((fp (extern-call fopen (data-addr headpath) (data-addr mode_rb))))
@@ -355,6 +387,26 @@
  (defun clear_every_frame_buffer_p (id)
    (or (= id 0) (= id 4) (= id 7) (= id 10) (= id 32)))
 
+ (defun ensure_buffer_surface (ctx id w h)
+   (if (or (< id 0) (>= id 1024))
+       0
+     (let ((bufsurf (ptr-read-u64 ctx 56))
+           (bufcr (ptr-read-u64 ctx 64)))
+       (if (= (ptr-read-u64 (+ bufsurf (* id 8)) 0) 0)
+           (let ((surf (extern-call cairo_image_surface_create 0 w h))
+                 (cr 0))
+             (seq
+              (setq cr (extern-call cairo_create surf))
+              (ptr-write-u64 (+ bufsurf (* id 8)) 0 surf)
+              (ptr-write-u64 (+ bufcr (* id 8)) 0 cr)
+              (extern-call cairo_save cr)
+              (extern-call cairo_set_operator cr 0)
+              (extern-call cairo_paint cr)
+              (extern-call cairo_restore cr)
+              (extern-call cairo_select_font_face cr (data-addr font_meiryo) 0 1)
+              1))
+         1))))
+
  ;; Apply one frame's commands to the persistent buffers (fault-guarded).
  (defun process_stream (ctx)
    (let ((cmd_base (ptr-read-u64 ctx 24))
@@ -386,22 +438,44 @@
                             (extern-call cairo_set_operator cr 0)
                             (extern-call cairo_paint cr)
                             (extern-call cairo_restore cr)
-                            (extern-call cairo_select_font_face cr (data-addr font_meiryo) 0 0)
+                            (extern-call cairo_select_font_face cr (data-addr font_meiryo) 0 1)
                             0))
                        ;; The bridge repeats gui-screen every frame only to
                        ;; guarantee surface existence.  Some work buffers are
                        ;; genuinely per-frame canvases (screen, overlays,
                        ;; scratch composites) and must clear on every replayed
                        ;; gui-screen or stale pixels leak into later frames.
-                         (if (clear_every_frame_buffer_p id)
-                             (let ((cr (ptr-read-u64 (+ bufcr (* id 8)) 0)))
-                               (seq
-                                (extern-call cairo_save cr)
-                                (extern-call cairo_set_operator cr 0)
-                                (extern-call cairo_paint cr)
-                                (extern-call cairo_restore cr)
-                                0))
-                           0))
+                         (let ((surf (ptr-read-u64 (+ bufsurf (* id 8)) 0))
+                               (old_w 0)
+                               (old_h 0))
+                           (seq
+                            (setq old_w (extern-call cairo_image_surface_get_width surf))
+                            (setq old_h (extern-call cairo_image_surface_get_height surf))
+                            (if (or (not (= old_w (ptr-read-u64 rec 16)))
+                                    (not (= old_h (ptr-read-u64 rec 24))))
+                                (let ((new_surf (extern-call cairo_image_surface_create 0
+                                                             (ptr-read-u64 rec 16)
+                                                             (ptr-read-u64 rec 24)))
+                                      (new_cr 0))
+                                  (seq
+                                   (setq new_cr (extern-call cairo_create new_surf))
+                                   (ptr-write-u64 (+ bufsurf (* id 8)) 0 new_surf)
+                                   (ptr-write-u64 (+ bufcr (* id 8)) 0 new_cr)
+                                   (extern-call cairo_save new_cr)
+                                   (extern-call cairo_set_operator new_cr 0)
+                                   (extern-call cairo_paint new_cr)
+                                   (extern-call cairo_restore new_cr)
+                                   (extern-call cairo_select_font_face new_cr (data-addr font_meiryo) 0 1)
+                                   0))
+                              (if (clear_every_frame_buffer_p id)
+                                  (let ((cr (ptr-read-u64 (+ bufcr (* id 8)) 0)))
+                                    (seq
+                                     (extern-call cairo_save cr)
+                                     (extern-call cairo_set_operator cr 0)
+                                     (extern-call cairo_paint cr)
+                                     (extern-call cairo_restore cr)
+                                     0))
+                                0)))))
                     0)))
               ((= op 10)
                (let ((id (ptr-read-u64 rec 8)))
@@ -414,14 +488,16 @@
                             (setq cr (extern-call cairo_create surf))
                             (ptr-write-u64 (+ bufsurf (* id 8)) 0 surf)
                             (ptr-write-u64 (+ bufcr (* id 8)) 0 cr)
-                            (extern-call cairo_select_font_face cr (data-addr font_meiryo) 0 0)
+                            (extern-call cairo_select_font_face cr (data-addr font_meiryo) 0 1)
                             0))
                        0)
                    0)))
               ((= op 1)
                (let ((id (ptr-read-u64 rec 8)))
                  (if (< id 1024)
-                     (ptr-write-u64 ctx 72 (ptr-read-u64 (+ bufcr (* id 8)) 0))
+                     (seq
+                      (ensure_buffer_surface ctx id 340 340)
+                      (ptr-write-u64 ctx 72 (ptr-read-u64 (+ bufcr (* id 8)) 0)))
                    (ptr-write-u64 ctx 72 0))))
               ((= op 13)
                (seq
@@ -429,6 +505,8 @@
                 (let ((cr (ptr-read-u64 ctx 72)))
                   (if (= cr 0) 0
                     (apply_source_rgba ctx cr)))))
+              ((= op 14)
+               0)
               ((= op 2)
                (seq
                 (ptr-write-u64 ctx 200 (ptr-read-u64 rec 8))
@@ -469,7 +547,7 @@
                (if (= (ptr-read-u64 ctx 72) 0) 0
                  (seq
                   (extern-call cairo_select_font_face (ptr-read-u64 ctx 72)
-                               (+ blob_base (- (ptr-read-u64 rec 88) 1)) 0 0)
+                               (+ blob_base (- (ptr-read-u64 rec 88) 1)) 0 1)
                   (extern-call cairo_set_font_size (ptr-read-u64 ctx 72)
                                (:f64 (bits-to-f64 (ptr-read-u64 rec 8)))))))
               ((= op 8)
@@ -508,56 +586,271 @@
                             (extern-call cairo_restore dcr)
                             0)))
                      0))))
+              ((= op 15)
+               (let ((dcr (let ((c (ptr-read-u64 ctx 72)))
+                            (if (= c 0) (ptr-read-u64 bufcr 0) c)))
+                     (src (ptr-read-u64 rec 8)))
+                 (if (= dcr 0) 0
+                   (if (< src 1024)
+                       (let ((ssurf (ptr-read-u64 (+ bufsurf (* src 8)) 0)))
+                         (if (= ssurf 0) 0
+                           (seq
+                            (extern-call cairo_save dcr)
+                            (extern-call cairo_translate dcr
+                                         (:f64 (bits-to-f64 (ptr-read-u64 rec 16)))
+                                         (:f64 (bits-to-f64 (ptr-read-u64 rec 24))))
+                            (extern-call cairo_scale dcr
+                                         (:f64 (bits-to-f64 (ptr-read-u64 rec 64)))
+                                         (:f64 (bits-to-f64 (ptr-read-u64 rec 72))))
+                            (extern-call cairo_set_source_surface dcr ssurf
+                                         (:f64 (bits-to-f64 (ptr-read-u64 rec 32)))
+                                         (:f64 (bits-to-f64 (ptr-read-u64 rec 40))))
+                            (extern-call cairo_rectangle dcr (:f64 0.0) (:f64 0.0)
+                                         (:f64 (bits-to-f64 (ptr-read-u64 rec 48)))
+                                         (:f64 (bits-to-f64 (ptr-read-u64 rec 56))))
+                            (extern-call cairo_clip dcr)
+                            (extern-call cairo_paint_with_alpha dcr
+                                         (:f64 (bits-to-f64 (ptr-read-u64 rec 80))))
+                            (extern-call cairo_restore dcr)
+                            0)))
+                     0))))
+              ((= op 16)
+               (let ((dcr (let ((c (ptr-read-u64 ctx 72)))
+                            (if (= c 0) (ptr-read-u64 bufcr 0) c)))
+                     (src (ptr-read-u64 rec 8))
+                     (count (ptr-read-u64 rec 16))
+                     (items (+ blob_base (- (ptr-read-u64 rec 24) 1)))
+                     (j 0))
+                 (if (= dcr 0) 0
+                   (if (< src 1024)
+                       (let ((ssurf (ptr-read-u64 (+ bufsurf (* src 8)) 0)))
+                         (if (= ssurf 0) 0
+                           (seq
+                            (while (and (< j count) (< j 4096))
+                              (let ((item (+ items (* j 64))))
+                                (seq
+                                 (extern-call cairo_save dcr)
+                                 (extern-call cairo_translate dcr
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 0)))
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 8))))
+                                 (extern-call cairo_scale dcr
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 48)))
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 56))))
+                                 (extern-call cairo_set_source_surface dcr ssurf
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 16)))
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 24))))
+                                 (extern-call cairo_rectangle dcr (:f64 0.0) (:f64 0.0)
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 32)))
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 40))))
+                                 (extern-call cairo_clip dcr)
+                                 (extern-call cairo_paint_with_alpha dcr
+                                              (:f64 (bits-to-f64 (ptr-read-u64 ctx 88))))
+                                 (extern-call cairo_restore dcr)
+                                 (setq j (+ j 1)))))
+                            0)))
+                     0))))
+              ((= op 17)
+               (let ((dcr (let ((c (ptr-read-u64 ctx 72)))
+                            (if (= c 0) (ptr-read-u64 bufcr 0) c)))
+                     (srca (ptr-read-u64 rec 8))
+                     (srcb (ptr-read-u64 rec 16))
+                     (count (ptr-read-u64 rec 24))
+                     (items (+ blob_base (- (ptr-read-u64 rec 32) 1)))
+                     (alpha-a (ptr-read-u64 rec 40))
+                     (alpha-b (ptr-read-u64 rec 48))
+                     (j 0))
+                 (if (= dcr 0) 0
+                   (if (and (< srca 1024) (< srcb 1024))
+                       (let ((surf-a (ptr-read-u64 (+ bufsurf (* srca 8)) 0))
+                             (surf-b (ptr-read-u64 (+ bufsurf (* srcb 8)) 0)))
+                         (if (or (= surf-a 0) (= surf-b 0)) 0
+                           (seq
+                            (while (and (< j count) (< j 4096))
+                              (let ((item (+ items (* j 64))))
+                                (seq
+                                 (extern-call cairo_save dcr)
+                                 (extern-call cairo_translate dcr
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 0)))
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 8))))
+                                 (extern-call cairo_scale dcr
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 48)))
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 56))))
+                                 (extern-call cairo_rectangle dcr (:f64 0.0) (:f64 0.0)
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 32)))
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 40))))
+                                 (extern-call cairo_clip dcr)
+                                 (extern-call cairo_set_source_surface dcr surf-a
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 16)))
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 24))))
+                                 (extern-call cairo_paint_with_alpha dcr
+                                              (:f64 (bits-to-f64 alpha-a)))
+                                 (extern-call cairo_set_source_surface dcr surf-b
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 16)))
+                                              (:f64 (bits-to-f64 (ptr-read-u64 item 24))))
+                                 (extern-call cairo_paint_with_alpha dcr
+                                              (:f64 (bits-to-f64 alpha-b)))
+                                 (extern-call cairo_restore dcr)
+                                 (setq j (+ j 1)))))
+                            0)))
+                     0))))
+              ((= op 18)
+               (let ((cr (ptr-read-u64 ctx 72))
+                     (count (ptr-read-u64 rec 8))
+                     (items (+ blob_base (- (ptr-read-u64 rec 16) 1)))
+                     (j 0))
+                 (if (= cr 0) 0
+                   (seq
+                    (while (and (< j count) (< j 4096))
+                      (let ((item (+ items (* j 24))))
+                        (seq
+                         (extern-call cairo_move_to cr
+                                      (:f64 (bits-to-f64 (ptr-read-u64 item 0)))
+                                      (:f64 (bits-to-f64 (ptr-read-u64 item 8))))
+                         (extern-call cairo_show_text cr
+                                      (+ blob_base (- (ptr-read-u64 item 16) 1)))
+                         (setq j (+ j 1)))))
+                    0))))
               (t 0))))
          (ptr-write-u64 ctx 40 (+ (ptr-read-u64 ctx 40) 1))))
       0)))
 
- (defun on_tick (ctx)
-   (seq
-    (if (> (ptr-read-u64 ctx 104) 0)
-        (refresh_held_key_state ctx)
-      0)
-    (let ((head (read_head ctx)))
-      (if (= head 0)
+ (defun set_output_size (ctx w h)
+   (let ((window (ptr-read-u64 ctx 512))
+         (area (ptr-read-u64 ctx 48))
+         (hwnd (ptr-read-u64 ctx 536))
+         ;; With SetProcessDPIAware in effect the GTK drawing area renders the
+         ;; game canvas at 1:1 physical pixels, so the native outer window must
+         ;; match the canvas exactly.  The former 3/2 (150% DPI) compensation
+         ;; oversized the window and left blank padding on the right and bottom.
+         (outer_w w)
+         ;; Reserve the GTK titlebar height outside the game canvas.
+         (outer_h (+ h 50)))
+     (if (= window 0) 0
+       (seq
+        (ptr-write-u64 ctx 520 w)
+        (ptr-write-u64 ctx 528 h)
+        (if (= area 0) 0
           (seq
-           (load_frame ctx (data-addr binpath))
-           (process_stream ctx))
-        (seq
-         ;; The bridge numbers bins per connection; a head below our
-         ;; last_applied means a new session started — resync from 0.
-         (if (< head (ptr-read-u64 ctx 192))
-             (ptr-write-u64 ctx 192 0)
-           0)
-         (let ((applied 0)
-               (next (+ (ptr-read-u64 ctx 192) 1)))
-           (seq
-            (while (and (<= next head) (< applied 64))
+           (extern-call gtk_drawing_area_set_content_width area w)
+           (extern-call gtk_drawing_area_set_content_height area h)
+           (extern-call gtk_widget_set_size_request area w h)))
+        (extern-call gtk_widget_set_size_request window w h)
+        (extern-call gtk_window_set_default_size window w h)
+        (if (= hwnd 0) 0
+          (extern-call SetWindowPos hwnd 0 0 0 outer_w outer_h 2))
+        (ptr-write-u64 ctx 552 0)
+        0))))
+
+ (defun enforce_output_window_size (ctx)
+   (let ((hwnd (ptr-read-u64 ctx 536))
+         (w (ptr-read-u64 ctx 520))
+         (h (ptr-read-u64 ctx 528))
+         (outer_w 0)
+         (outer_h 0)
+         (seen (ptr-read-u64 ctx 552)))
+     (seq
+      (setq outer_w w)
+      (setq outer_h (+ h 50))
+      (if (= hwnd 0)
+          (let ((found (extern-call FindWindowA 0 (data-addr title))))
+            (if (= found 0) 0
               (seq
-               ;; AOT dialect constraint: never nest a user-function call
-               ;; inside another call's argument list or a primitive
-               ;; comparison — bind results to locals first.
-               (let ((seqpath (build_seq_path ctx next)))
-                 (let ((lfres (load_frame ctx seqpath)))
-                   (if (= lfres 0)
-                       (ptr-write-u64 ctx 192 next)
-                     (seq
-                      (process_stream ctx)
-                      (ptr-write-u64 ctx 192 next)))))
-               (setq next (+ next 1))
-               (setq applied (+ applied 1))))))))
-    (ptr-write-u64 ctx 80 (ptr-read-u64 (ptr-read-u64 ctx 56) 0))
-    (extern-call gtk_widget_queue_draw (ptr-read-u64 ctx 48))
-    (on_snapshot ctx)
-    1)))
+               (ptr-write-u64 ctx 536 found)
+               (setq hwnd found))))
+        0)
+      (if (= hwnd 0) 0
+        (if (= seen 0)
+            (seq
+             (extern-call SetWindowPos hwnd 0 0 0 outer_w outer_h 2)
+             (ptr-write-u64 ctx 552 1))
+          0)))))
+
+ (defun toggle_output_size (ctx)
+   (if (= (ptr-read-u64 ctx 520) 680)
+       (set_output_size ctx 340 340)
+     (set_output_size ctx 680 680)))
+
+ (defun on_tick (ctx)
+   (let ((did-frame 0))
+     (seq
+      (enforce_output_window_size ctx)
+      (if (> (ptr-read-u64 ctx 104) 0)
+          (refresh_held_key_state ctx)
+        0)
+      (let ((head (read_head ctx)))
+        (if (= head 0)
+            (let ((mainres (load_frame ctx (data-addr binpath))))
+              (if (= mainres 0)
+                  0
+                (seq
+                 (process_stream ctx)
+                 (setq did-frame 1))))
+          (seq
+           ;; The bridge numbers bins per connection; a head below our
+           ;; last_applied means a new session started — resync from 0.
+           (if (< head (ptr-read-u64 ctx 192))
+               (ptr-write-u64 ctx 192 0)
+             0)
+           (if (> head (ptr-read-u64 ctx 192))
+               (let ((mainres (load_frame ctx (data-addr binpath))))
+                 (if (= mainres 0)
+                     0
+                   (seq
+                    (process_stream ctx)
+                    (ptr-write-u64 ctx 192 head)
+                    (setq did-frame 1))))
+             0))))
+      (if (= did-frame 1)
+          (seq
+           (ptr-write-u64 ctx 80 (ptr-read-u64 (ptr-read-u64 ctx 56) 0))
+           (extern-call gtk_widget_queue_draw (ptr-read-u64 ctx 48)))
+        0)
+      1)))
+
+ (defun poll_function_keys (ctx)
+   (let ((f1 (extern-call GetAsyncKeyState 112))
+         (f2 (extern-call GetAsyncKeyState 113))
+         (f3 (extern-call GetAsyncKeyState 114))
+         (mask 0)
+         (oldmask (ptr-read-u64 ctx 544)))
+     (seq
+      (if (not (= (logand f1 32768) 0))
+          (setq mask (logior mask 1))
+        0)
+      (if (not (= (logand f2 32768) 0))
+          (setq mask (logior mask 2))
+        0)
+      (if (not (= (logand f3 32768) 0))
+          (setq mask (logior mask 4))
+        0)
+      (if (and (not (= (logand mask 1) 0))
+               (= (logand oldmask 1) 0))
+          (toggle_output_size ctx)
+        0)
+      (if (and (not (= (logand mask 2) 0))
+               (= (logand oldmask 2) 0))
+          (set_output_size ctx 680 680)
+        0)
+      (if (and (not (= (logand mask 4) 0))
+               (= (logand oldmask 4) 0))
+          (set_output_size ctx 340 340)
+        0)
+      (ptr-write-u64 ctx 544 mask))))
 
  (defun on_key_pressed (controller keyval keycode state ctx)
    (let ((mapped (map_keyval keyval)))
      (seq
       (if (> mapped 0)
-          (seq
-           (add_held_key ctx mapped)
-           (ptr-write-u64 ctx 176 mapped)
-           (write_key_state ctx mapped))
+          (if (= mapped 112)
+              (toggle_output_size ctx)
+            (if (= mapped 113)
+                (set_output_size ctx 680 680)
+              (if (= mapped 114)
+                  (set_output_size ctx 340 340)
+                (seq
+                 (add_held_key ctx mapped)
+                 (ptr-write-u64 ctx 176 mapped)
+                 (write_key_state ctx mapped)))))
         0)
       1)))
 
@@ -597,8 +890,23 @@
         0
       (seq
        (extern-call cairo_surface_flush (ptr-read-u64 ctx 80))
+       (extern-call cairo_save cr)
+       (if (not (= (ptr-read-u64 ctx 520) 340))
+           (extern-call cairo_rectangle cr (:f64 0.0) (:f64 0.0)
+                        (:f64 680.0) (:f64 680.0))
+         (extern-call cairo_rectangle cr (:f64 0.0) (:f64 0.0)
+                      (:f64 340.0) (:f64 340.0)))
+       (extern-call cairo_clip cr)
+       ;; GTK callback dimensions are DPI-virtualized on Windows.  The
+       ;; renderer's output mode is the stable source of truth for the
+       ;; 340px game surface transform.
+       (if (= (ptr-read-u64 ctx 520) 680)
+           (extern-call cairo_scale cr (:f64 2.0) (:f64 2.0))
+         (extern-call cairo_scale cr (:f64 1.0) (:f64 1.0)))
        (extern-call cairo_set_source_surface cr (ptr-read-u64 ctx 80) (:f64 0.0) (:f64 0.0))
-       (extern-call cairo_paint cr)))
+       (extern-call cairo_pattern_set_filter (extern-call cairo_get_source cr) 3)
+       (extern-call cairo_paint cr)
+       (extern-call cairo_restore cr)))
     0))
 
  (defun on_snapshot (ctx)
@@ -614,7 +922,7 @@
    (seq (extern-call g_main_loop_quit (ptr-read-u64 ctx 0)) 0))
 
  (defun main ()
-   (let ((ctx (extern-call malloc 480))
+   (let ((ctx (extern-call malloc 768))
          (buf (extern-call malloc 4194304))
          (bufsurf (extern-call calloc 1024 8))
          (bufcr (extern-call calloc 1024 8))
@@ -633,50 +941,69 @@
       (ptr-write-u64 ctx 200 0)
       (ptr-write-u64 ctx 208 0)
       (ptr-write-u64 ctx 216 0)
+      (ptr-write-u64 ctx 512 0)
+      (ptr-write-u64 ctx 520 680)
+      (ptr-write-u64 ctx 528 680)
+      (ptr-write-u64 ctx 544 0)
+      (ptr-write-u64 ctx 552 0)
       (setq key_state_n (extern-call GetEnvironmentVariableA
                                      (data-addr env_key_state) envbuf 259))
       (if (> key_state_n 0)
           (ptr-write-u64 ctx 184 envbuf)
         (ptr-write-u64 ctx 184 (data-addr default_key_state)))
       (setq selftest_n (extern-call GetEnvironmentVariableA
-                                    (data-addr env_key_selftest) (+ ctx 224) 255))
+                                    (data-addr env_key_selftest) (+ ctx 560) 207))
       ;; The env-gated key self-test (SUMI_KEY_SELFTEST) fired even with the
       ;; variable unset — the AOT env read was unreliable — closing the play
       ;; window immediately.  The self-test served only codex's one-off
       ;; verification, so always run the normal window path now.
       (if (= 0 0)
           (seq
+           (extern-call SetProcessDPIAware)
            (extern-call gtk_init)
            (load_frame ctx (data-addr binpath))
            (process_stream ctx)
            (ptr-write-u64 ctx 80 (ptr-read-u64 bufsurf 0))
            (let ((window (extern-call gtk_window_new)))
              (seq
+              (ptr-write-u64 ctx 512 window)
               (extern-call gtk_window_set_title window (data-addr title))
+              (extern-call gtk_window_set_decorated window 1)
+              (extern-call gtk_widget_set_size_request window
+                           680 680)
               (extern-call gtk_window_set_default_size window
-                           (ptr-read-u64 buf 8) (ptr-read-u64 buf 16))
+                           680 680)
               (let ((area (extern-call gtk_drawing_area_new))
                     (keyctl (extern-call gtk_event_controller_key_new))
                     (loop (extern-call g_main_loop_new 0 0)))
                 (seq
                  (ptr-write-u64 ctx 0 loop)
                  (ptr-write-u64 ctx 48 area)
+                 (extern-call gtk_drawing_area_set_content_width area
+                              680)
+                 (extern-call gtk_drawing_area_set_content_height area
+                              680)
                  (extern-call gtk_widget_set_size_request area
-                              (ptr-read-u64 buf 8) (ptr-read-u64 buf 16))
+                              680 680)
                  (extern-call gtk_drawing_area_set_draw_func area (addr-of on_draw) ctx 0)
                  (extern-call gtk_window_set_child window area)
                  (extern-call g_signal_connect_data
                               keyctl (data-addr sig_keyprs) (addr-of on_key_pressed) ctx 0 0)
                  (extern-call g_signal_connect_data
                               keyctl (data-addr sig_keyrel) (addr-of on_key_released) ctx 0 0)
-                 (extern-call gtk_widget_add_controller window keyctl)
+                 (extern-call gtk_widget_set_focusable area 1)
+                 (extern-call gtk_widget_add_controller area keyctl)
                  (extern-call g_signal_connect_data
                               window (data-addr sig_active) (addr-of on_active_changed) ctx 0 0)
                  (extern-call g_signal_connect_data
                               window (data-addr sig_destroy) (addr-of on_destroy) ctx 0 0)
-                 (extern-call g_timeout_add 50 (addr-of on_tick) ctx)
+                 (extern-call g_timeout_add 16 (addr-of on_tick) ctx)
                  (extern-call g_timeout_add 1800000 (addr-of on_quit) ctx)
                  (extern-call gtk_window_present window)
+                 (extern-call gtk_widget_grab_focus area)
+                 (let ((hwnd (extern-call FindWindowA 0 (data-addr title))))
+                   (ptr-write-u64 ctx 536 hwnd))
+                 (set_output_size ctx 680 680)
                  (extern-call g_main_loop_run loop)
                  0))))
         (run_key_selftest ctx)))))))

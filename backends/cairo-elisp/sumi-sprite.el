@@ -1,6 +1,6 @@
-;; sumi-sprite.el — NeLisp AOT sprite/buffer renderer for sumi (no Rust).
+;; sumi-sprite.el - NeLisp AOT sprite/buffer renderer for sumi.
 ;;
-;; Replays a CAPTURED sumi command stream (sumi-sprite.bin from sprite-to-bin.js)
+;; Replays a CAPTURED sumi command stream (sumi-sprite.bin)
 ;; including PNG sprite blits, the way the game actually draws: off-screen
 ;; buffers are cairo image surfaces; the game loads PNGs into buffers, selects a
 ;; draw target, and blits scaled sprite regions between buffers.  The whole

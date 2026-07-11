@@ -8,7 +8,7 @@
 
 ;; The native sumi backend for NeLisp: a *pure elisp* binding that draws the
 ;; sumi vocabulary by calling libcairo directly through NeLisp's dynamic FFI
-;; (`emacs-ffi-call').  No Rust, no C shim, no GTK event loop -- this first cut
+;; (`emacs-ffi-call').  This first cut
 ;; renders to an in-memory Cairo image surface and writes a PNG.
 ;;
 ;; Status: READY-TO-TEST, pending one runtime feature.  Cairo's drawing API is

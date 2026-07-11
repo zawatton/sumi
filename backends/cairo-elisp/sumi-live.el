@@ -1,10 +1,9 @@
-;; sumi-live.el — NeLisp AOT LIVE sumi renderer (no Rust, no emacs-ffi-call).
+;; sumi-live.el - NeLisp AOT live sumi renderer.
 ;;
 ;; Like sumi-render.el, but it RE-READS the .bin every ~50 ms (a g_timeout
 ;; "watch" tick) and repaints, so an external writer updating sumi-frame.bin
-;; live-updates the window.  This is model A (command-stream IPC) via a file:
-;; replace the file re-read with a socket recv and it becomes true sumi-live.
-;; A small JS bridge (game's SUMI_STREAM_TCP JSON -> .bin) feeds the real game.
+;; live-updates the window.  The current game path writes .bin frames from the
+;; NeLisp/Elisp live feed loop using the native renderer path.
 ;;
 ;; .bin layout (u64 LE): [0]num_cmds [8]W [16]H [24]blob_off [32]cmd_off
 ;;   blob: NUL strings ; records (48B): op a0..a3(f64 bits) toff

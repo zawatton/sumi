@@ -1,9 +1,8 @@
 ;; sumi-render.el — NeLisp AOT runtime interpreter for the sumi command stream.
 ;;
-;; A FIXED native GTK4 program (no Rust, no emacs-ffi-call): it reads a packed
-;; command frame produced by frame-to-bin.js at RUN TIME and renders it via
-;; cairo.  Swapping the .bin re-renders without recompiling — the foundation for
-;; live (TCP) rendering, where the .bin read is later replaced by a socket recv.
+;; A fixed native GTK4 program: it reads a packed
+;; command frame produced by the NeLisp/Elisp packer at RUN TIME and renders it
+;; via cairo.  Swapping the .bin re-renders without recompiling.
 ;;
 ;; .bin layout (u64 LE): [0]num_cmds [8]W [16]H [24]blob_off [32]cmd_off
 ;;   blob: NUL-terminated strings ; records (48B): op a0 a1 a2 a3 toff
