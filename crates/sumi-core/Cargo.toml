@@ -1,8 +1,0 @@
-[package]
-name = "sumi-core"
-version = "0.0.0"
-edition = "2021"
-description = "Backend-agnostic 2D GUI command vocabulary for nelisp"
-license = "CC0-1.0"
-
-[dependencies]
