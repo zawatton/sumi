@@ -16,7 +16,7 @@
 ;;      200 color_r_bits 208 color_g_bits 216 color_b_bits
 ;;      224 scratch[288]
 ;;      512 window 520 output_w 528 output_h 536 hwnd 544 f1_down
-;;      552 resize_seen 560 selftest_env[208]
+;;      552 resize_seen 560 selftest_env[208] 768 text_tmp
 (seq
  (data-blob binpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/sumi-sprite.bin\0" rodata)
  (data-blob headpath "C:/Users/kuroz/Cowork/Notes/dev/sumi/backends/cairo-elisp/sumi-sprite-head.txt\0" rodata)
@@ -106,6 +106,123 @@
          (setq n (+ (* n 10) (- b 48)))
          (setq i (+ i 1))))
       n)))
+
+ (defun utf8_cont_p (b)
+   (= (logand b 192) 128))
+
+ (defun cp932_lead_p (b)
+   (or (and (>= b 129) (<= b 159))
+       (and (>= b 224) (<= b 252))))
+
+ (defun cp932_trail_p (b)
+   (or (and (>= b 64) (<= b 126))
+       (and (>= b 128) (<= b 252))))
+
+ (defun utf8_seq_len_at (src i)
+   (let ((b0 (ptr-read-u8 src i))
+         (b1 (ptr-read-u8 src (+ i 1)))
+         (b2 (ptr-read-u8 src (+ i 2)))
+         (b3 (ptr-read-u8 src (+ i 3))))
+     (if (< b0 128)
+         1
+       (if (and (>= b0 194) (<= b0 223)
+                (utf8_cont_p b1))
+           2
+         (if (and (= b0 224)
+                  (>= b1 160) (<= b1 191)
+                  (utf8_cont_p b2))
+             3
+           (if (and (or (and (>= b0 225) (<= b0 236))
+                        (and (>= b0 238) (<= b0 239)))
+                    (utf8_cont_p b1)
+                    (utf8_cont_p b2))
+               3
+             (if (and (= b0 237)
+                      (>= b1 128) (<= b1 159)
+                      (utf8_cont_p b2))
+                 3
+               (if (and (= b0 240)
+                        (>= b1 144) (<= b1 191)
+                        (utf8_cont_p b2)
+                        (utf8_cont_p b3))
+                   4
+                 (if (and (>= b0 241) (<= b0 243)
+                          (utf8_cont_p b1)
+                          (utf8_cont_p b2)
+                          (utf8_cont_p b3))
+                     4
+                   (if (and (= b0 244)
+                            (>= b1 128) (<= b1 143)
+                            (utf8_cont_p b2)
+                            (utf8_cont_p b3))
+                       4
+                     0))))))))))
+
+ (defun append_utf8_codepoint (dst off cp)
+   (if (< cp 128)
+       (seq
+        (ptr-write-u8 dst off cp)
+        (+ off 1))
+     (if (< cp 2048)
+         (seq
+          (ptr-write-u8 dst off (+ 192 (/ cp 64)))
+          (ptr-write-u8 dst (+ off 1) (+ 128 (logand cp 63)))
+          (+ off 2))
+       (if (< cp 65536)
+           (seq
+            (ptr-write-u8 dst off (+ 224 (/ cp 4096)))
+            (ptr-write-u8 dst (+ off 1) (+ 128 (logand (/ cp 64) 63)))
+            (ptr-write-u8 dst (+ off 2) (+ 128 (logand cp 63)))
+            (+ off 3))
+         (seq
+          (ptr-write-u8 dst off (+ 240 (/ cp 262144)))
+          (ptr-write-u8 dst (+ off 1) (+ 128 (logand (/ cp 4096) 63)))
+          (ptr-write-u8 dst (+ off 2) (+ 128 (logand (/ cp 64) 63)))
+          (ptr-write-u8 dst (+ off 3) (+ 128 (logand cp 63)))
+          (+ off 4))))))
+
+ (defun append_utf8_replacement (dst off)
+   (append_utf8_codepoint dst off 65533))
+
+ (defun sanitize_text_for_cairo (ctx src)
+   (let ((dst (ptr-read-u64 ctx 768))
+         (i 0)
+         (off 0)
+         (b 0)
+         (n 0))
+     (seq
+      (if (= dst 0)
+          src
+        (seq
+         (while (and (< i 4095) (< off 16379))
+           (seq
+            (setq b (ptr-read-u8 src i))
+            (if (= b 0)
+                (setq i 4095)
+              (seq
+               (setq n (utf8_seq_len_at src i))
+               (if (> n 0)
+                   (seq
+                    (while (> n 0)
+                      (seq
+                       (ptr-write-u8 dst off (ptr-read-u8 src i))
+                       (setq off (+ off 1))
+                       (setq i (+ i 1))
+                       (setq n (- n 1)))))
+                 (if (and (>= b 161) (<= b 223))
+                     (seq
+                      (setq off (append_utf8_codepoint dst off (+ 65377 (- b 161))))
+                      (setq i (+ i 1)))
+                   (if (and (cp932_lead_p b)
+                            (cp932_trail_p (ptr-read-u8 src (+ i 1))))
+                       (seq
+                        (setq off (append_utf8_replacement dst off))
+                        (setq i (+ i 2)))
+                     (seq
+                      (setq off (append_utf8_replacement dst off))
+                      (setq i (+ i 1))))))))))
+         (ptr-write-u8 dst off 0)
+         dst)))))
 
  (defun clear_held_keys (ctx)
    (let ((base (+ ctx 112))
@@ -557,7 +674,8 @@
                                (:f64 (bits-to-f64 (ptr-read-u64 rec 8)))
                                (:f64 (bits-to-f64 (ptr-read-u64 rec 16))))
                   (extern-call cairo_show_text (ptr-read-u64 ctx 72)
-                               (+ blob_base (- (ptr-read-u64 rec 88) 1))))))
+                               (sanitize_text_for_cairo
+                                ctx (+ blob_base (- (ptr-read-u64 rec 88) 1)))))))
               ((= op 12)
                (let ((dcr (let ((c (ptr-read-u64 ctx 72)))
                             (if (= c 0) (ptr-read-u64 bufcr 0) c)))
@@ -707,7 +825,8 @@
                                       (:f64 (bits-to-f64 (ptr-read-u64 item 0)))
                                       (:f64 (bits-to-f64 (ptr-read-u64 item 8))))
                          (extern-call cairo_show_text cr
-                                      (+ blob_base (- (ptr-read-u64 item 16) 1)))
+                                      (sanitize_text_for_cairo
+                                       ctx (+ blob_base (- (ptr-read-u64 item 16) 1))))
                          (setq j (+ j 1)))))
                     0))))
               (t 0))))
@@ -922,10 +1041,11 @@
    (seq (extern-call g_main_loop_quit (ptr-read-u64 ctx 0)) 0))
 
  (defun main ()
-   (let ((ctx (extern-call malloc 768))
+   (let ((ctx (extern-call malloc 776))
          (buf (extern-call malloc 4194304))
          (bufsurf (extern-call calloc 1024 8))
          (bufcr (extern-call calloc 1024 8))
+         (texttmp (extern-call malloc 16384))
          (envbuf (extern-call malloc 260))
          (key_state_n 0)
          (selftest_n 0))
@@ -937,6 +1057,9 @@
       (ptr-write-u64 ctx 72 0)
       (ptr-write-u64 ctx 88 4607182418800017408)
       (ptr-write-u64 ctx 96 0)
+      (ptr-write-u64 ctx 16 0)
+      (ptr-write-u64 ctx 24 0)
+      (ptr-write-u64 ctx 32 0)
       (ptr-write-u64 ctx 192 0)
       (ptr-write-u64 ctx 200 0)
       (ptr-write-u64 ctx 208 0)
@@ -946,6 +1069,7 @@
       (ptr-write-u64 ctx 528 680)
       (ptr-write-u64 ctx 544 0)
       (ptr-write-u64 ctx 552 0)
+      (ptr-write-u64 ctx 768 texttmp)
       (setq key_state_n (extern-call GetEnvironmentVariableA
                                      (data-addr env_key_state) envbuf 259))
       (if (> key_state_n 0)
@@ -961,8 +1085,9 @@
           (seq
            (extern-call SetProcessDPIAware)
            (extern-call gtk_init)
-           (load_frame ctx (data-addr binpath))
-           (process_stream ctx)
+           (if (= (load_frame ctx (data-addr binpath)) 0)
+               0
+             (process_stream ctx))
            (ptr-write-u64 ctx 80 (ptr-read-u64 bufsurf 0))
            (let ((window (extern-call gtk_window_new)))
              (seq
@@ -1005,5 +1130,5 @@
                    (ptr-write-u64 ctx 536 hwnd))
                  (set_output_size ctx 680 680)
                  (extern-call g_main_loop_run loop)
-                 0))))
-        (run_key_selftest ctx)))))))
+                 0)))))
+        (run_key_selftest ctx))))))
