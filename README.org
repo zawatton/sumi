@@ -1,295 +1,38 @@
-#+TITLE: sumi — a backend-agnostic 2D GUI library for nelisp
+#+TITLE: sumi - cairo-elisp native renderer for NeLisp
 #+STARTUP: showall
 
 * What this is
 
-A *general-purpose, backend-agnostic 2D GUI library* that a nelisp program drives
-by emitting a small, stable vocabulary of drawing commands. The same program runs
-unchanged on multiple rendering backends and multiple application shells.
-
-It was extracted from the newDTW game, whose entire non-GUI logic was migrated to
-nelisp (state-diff). That migration already abstracted all drawing into ~14 events
-(=dtw-set-color=, =dtw-fill-rect=, =dtw-draw-image=, =dtw-draw-text= …). =sumi=
-generalises that boundary into a reusable library and adds native rendering.
+=sumi= is the native rendering layer used by =dev/newDTW-nelisp=.
+The active path is Elisp from the game runtime through the frame feeder and the
+renderer source:
 
 #+begin_example
-  nelisp program ──emit──▶  GUI command vocabulary (stable API)
-                                       │
-        ┌──────────────────────────────┼──────────────────────────────┐
-   [Canvas-2D backend]           [GTK4/Cairo backend]           (future: wgpu, …)
-        │                               │
-   shell: Electron | Tauri        shell: native GTK4 app
+  NeLisp/Elisp game runtime
+      -> pure-elisp live feeder / binary packer
+      -> cairo-elisp AOT renderer source
+      -> GTK4 window executable
 #+end_example
 
-* Proven in a real app
+The repository keeps the active cairo-elisp renderer source only. Older
+alternative backend and shell-host experiments have been removed from the active
+tree.
 
-The =newDTW= game (TypeScript/Electron) was switched to draw entirely through
-=sumi= — its colour, line, fill, text and sprite adapters delegate to the library
-(sharing the game's canvases; game-specific bits like asset I/O and special
-compositing stay game-side). The result:
+* Active Component
 
-- the game renders identically in *Electron* and *Tauri* (Canvas backend), and
-- the same frames render *natively on GTK4/Cairo* — both as a one-shot replay of
-  a captured frame (=sumi-replay=, loading the game's PNG sprite assets) and *live*
-  (=sumi-live=: the running game streams ~35 fps over TCP and the native window
-  repaints each frame). One vocabulary, webview *and* native, no game changes
-  beyond the delegating adapters.
+- =backends/cairo-elisp/= - Elisp renderer sources, AOT build entrypoint, live
+  renderer, dump renderer, and renderer fixtures.
 
-* Quickstart
-
-Render a frame with *zero system dependencies* (tiny-skia → PNG):
-
-#+begin_src rust
-  use sumi_core::{demo_frame, Backend};
-  use sumi_skia::SkiaBackend;
-
-  let mut backend = SkiaBackend::new();
-  backend.apply_all(&demo_frame());           // or your own Vec<Command>
-  backend.pixmap(0).unwrap().save_png("out.png").unwrap();
-#+end_src
-
-Drive it straight from the *command stream* a nelisp program emits — each
-=(name, [i32…], text?)= tuple, parsed through the one contract:
-
-#+begin_src rust
-  use sumi_core::{parse, Backend};
-
-  let cmds: Vec<_> = stream                    // &[(&str, Vec<i32>, Option<&str>)]
-      .iter()
-      .filter_map(|(name, args, text)| parse(name, args, *text))
-      .collect();
-  backend.apply_all(&cmds);
-#+end_src
-
-Same vocabulary on the web (Canvas backend, Electron/Tauri):
-
-#+begin_src js
-  import { CanvasBackend, parseFrame } from 'sumi-canvas';
-
-  const make = (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h });
-  const backend = new CanvasBackend(make);
-  backend.applyAll(parseFrame(frame));         // frame = [{name, nums, text?}, …]
-  document.querySelector('canvas').getContext('2d').drawImage(backend.surface(0), 0, 0);
-#+end_src
-
-For a native window instead of a PNG, swap =SkiaBackend= for the Cairo backend and
-host it in a GTK4 =DrawingArea= (see =crates/sumi-cairo/src/window.rs=).
-
-* Design goals
-
-1. *Backend-agnostic.* The vocabulary is the only contract. Backends are
-   interchangeable; a program never names a backend.
-2. *Multi-shell.* The Canvas backend serves both Electron and Tauri (both render
-   HTML/Canvas in a webview). The Cairo backend serves a native GTK4 app (no
-   webview). All three ship from one codebase.
-3. *General-purpose, not game-specific.* The public vocabulary is a clean
-   immediate-mode 2D API. The game's =dtw-*= events are one binding onto it.
-4. *Easy to use.* A nelisp program needs only the vocabulary + a one-line backend
-   selection. No backend-specific code in the program.
-
-* The rendering model (immediate-mode, multi-buffer 2D)
-
-The model is the lowest common denominator of Canvas-2D and Cairo, so both map
-1:1. It is the HSP-style model the game already uses:
-
-- *Buffers* — N offscreen surfaces; one is "current". =buffer-select= switches.
-- *State* — current color, font, blend mode, and a draw cursor (position).
-- *Draw* — filled rect, line, point, text-at-cursor, blit (copy a region of one
-  buffer onto another, optionally scaled), clear.
-- *Present* — flush the visible buffer to the window.
-
-** Command vocabulary (v0 — stable API)
-
-| general command            | args                                  | game event (=dtw-*=) binding | Canvas             | Cairo                         |
-|----------------------------+---------------------------------------+------------------------------+--------------------+-------------------------------|
-| =gui-screen=               | id w h mode                           | dtw-screen                   | create canvas      | new ImageSurface              |
-| =gui-buffer-select=        | id                                    | dtw-select-buffer (gsel)     | set active ctx     | set active cr/surface         |
-| =gui-set-color=            | r g b                                 | dtw-set-color (color)        | fillStyle/strokeStyle | cr.set_source_rgb          |
-| =gui-set-blend-mode=       | mode                                  | dtw-set-blend-mode (gmode)   | globalCompositeOp  | cr.set_operator               |
-| =gui-set-font=             | name size style                       | dtw-set-font (font)          | ctx.font           | Pango font desc               |
-| =gui-set-position=         | x y                                   | dtw-set-position (pos)       | cursor (x,y)       | cursor (x,y)                  |
-| =gui-fill-rect=            | x1 y1 x2 y2                           | dtw-fill-rect (boxf)         | fillRect           | cr.rectangle + fill           |
-| =gui-draw-line=            | x1 y1 x2 y2                           | dtw-draw-line (line)         | moveTo/lineTo/stroke | cr.move_to/line_to/stroke   |
-| =gui-draw-point=           | x y                                   | dtw-draw-point (pset)        | fillRect 1×1       | cr.rectangle 1×1 + fill       |
-| =gui-draw-text=            | text …                                | dtw-draw-text (mes)          | fillText@cursor    | Pango layout @cursor          |
-| =gui-draw-image=           | srcBuf sx sy w h dx dy                | dtw-draw-image (gcopy)       | drawImage          | cr.set_source_surface + paint |
-| =gui-draw-image-scaled=    | srcBuf sx sy sw sh dx dy dw dh        | dtw-draw-image-scaled (gzoom)| drawImage scaled   | cr.scale + paint              |
-| =gui-object-size=          | w h                                   | dtw-object-size (objsize)    | sprite metrics     | sprite metrics                |
-| =gui-present=              | —                                     | dtw-redraw (redraw)          | requestAnimationFrame paint | queue_draw / snapshot   |
-
-Input + window events flow back as a separate (already-abstracted) vocabulary:
-=dtw-read-key-state=, =dtw-read-stick=, =window-add-event-listener=. These become
-=sumi-input= (a sibling library; see "Companion libraries").
-
-* Architecture
-
-** Backend interface
-
-A backend implements one function: =dispatch(command, args) -> value=. The runner
-(=stateDiffRunner= in TS today; a Rust dispatcher for the native backend) routes
-each GUI command to the active backend. Adding a backend = implementing this
-interface; nothing in a nelisp program changes.
-
-Choosing a backend is the host's *only* backend-specific decision.
-=sumi_core::BackendKind= ({=Skia=, =Cairo=, =Canvas=}) names the choice, with
-=from_name= / =from_env= (=$SUMI_BACKEND=) so a shell can resolve it at
-startup — e.g. a native host maps =Cairo= → windowed GTK4 and =Skia= → headless
-PNG, a webview shell maps =Canvas=. A program never sees this.
-
-** Backends
-
-- *Canvas-2D* (=backends/canvas/=, dependency-free ES-module JavaScript). A
-  standalone =CanvasBackend= that maps the vocabulary onto a =CanvasRenderingContext2D=
-  (multi-buffer offscreen canvases, 9-arg =drawImage= sub-region blits, Pango-free
-  text via =fillText=). Owned by =sumi= itself — not imported from any game —
-  so Electron and Tauri both consume it. The backend takes a =createCanvas(w,h)=
-  factory, so it runs in a browser, under a webview, or against a recording mock in
-  tests. Verified with =node --test= (3 passing), including rendering the same
-  =frame.json= the native Cairo backend renders.
-- *Cairo/GTK4* (=crates/sumi-cairo/=, Rust + gtk4-rs + cairo-rs). Implements
-  the vocabulary against a =gtk::DrawingArea= with Cairo surfaces per buffer.
-- *tiny-skia* (=crates/sumi-skia/=, pure Rust, *no system deps*). A
-  rasteriser backend for headless PNGs and anywhere GTK isn't available. Text is
-  drawn from a pure-Rust 8x8 bitmap font (=font8x8=) scaled to the font size, so it
-  renders real glyphs without a system font engine; the Cairo backend is the
-  high-quality (Pango) text path.
-
-** Shells
-
-- *Electron* — current. Canvas backend in the renderer; Electron main for window/IO.
-- *Tauri* — Canvas backend in the webview; a thin Rust =tauri= shell replaces the
-  Electron main (window, fs, ipc).
-- *Native GTK4* — Cairo backend; a =gtk4-rs= app hosts the nelisp runtime and the
-  DrawingArea. No webview.
-
-* Companion libraries (extract the same way)
-
-The =dtw-*= boundary already factors the rest of the platform into small
-vocabularies. Each becomes a backend-agnostic nelisp library:
-
-- *sumi* — this one (draw vocabulary).
-- *sumi-input* — *done*: =crates/sumi-input= (Rust core: logical =Button=,
-  HSP-style =stick= bitmask, =InputState=, key mapping) + =backends/input= (web/DOM
-  binding mirroring the same buttons + bits). The input counterpart of the draw
-  vocabulary (=dtw-read-key-state= / =dtw-read-stick= / key events).
-- *nelisp-audio* — =dtw-play-sound=, sound-memory.
-- *nelisp-fs* — =dtw-save-file= / =dtw-load-file=.
-- *nelisp-net* — =dtw-tcp-put=.
-- The *state-diff runner* itself is the shared nelisp execution substrate.
-
-* Roadmap
-
-** Phase 0 — contract (this commit)
-- Vocabulary spec (above) frozen as v0.
-- Crate + module scaffold.
-
-** Phase 1 — Cairo/GTK4 backend spike (native proof) — *DONE*
-- =sumi-skia= (pure-Rust tiny-skia) renders =demo_frame()= to a PNG — no
-  system deps. Proves the vocabulary maps to a rasteriser.
-- =sumi-cairo= renders the same frame to a PNG on real Cairo surfaces with
-  real *Pango text*, and hosts it in a live *GTK4 window* (=--bin
-  sumi-window=). Both verified on this machine (GNU toolchain + MSYS2 GTK4).
-- *Captured real game frame*: =newDTW.github.io/tools/capture_gui_frame.js=
-  records one frame of the migrated game's own =dtw-*= draw stream (off the real
-  state-diff runner) into =frame.json=; =--bin sumi-frame= loads it, maps
-  every command through =sumi_core::parse= (the vocabulary contract), and
-  renders it natively (PNG =sumi-frame.png= + live GTK4 window). All 72
-  commands mapped with none dropped; verified on this machine (=FRAME_EXIT=0=, no
-  leftover process). The game's draw vocabulary now renders on a native backend
-  with no webview and no Canvas.
-- *Sub-region blits* (=dtw-draw-image= / =dtw-draw-image-scaled=) are honoured on
-  both backends: only the requested =(sx,sy,w,h)= rectangle is copied (and scaled
-  to =(dw,dh)= for the scaled form), so a blit never spills the rest of the source
-  buffer. Verified by tiny-skia unit tests with pixel assertions
-  (=cargo test -p sumi-skia=, 2 passing); the Cairo backend mirrors the same
-  clip-then-paint mapping. The full v0 vocabulary now renders on both backends.
-- *Blend modes* are honoured on both native backends: =gui-set-blend-mode= maps
-  =Normal/AlphaKey= → over-compositing (source alpha) and =Add= → additive
-  (Cairo =Operator::Add= / tiny-skia =BlendMode::Plus=). Unit tests assert an
-  additive fill brightens the destination on both backends (=add_blend_mode_brightens=).
-- Remaining within this phase: driving real sprite blits needs the game's asset
-  pack (the geometry/text/blend vocabulary itself is complete on every backend).
-
-** Phase 2 — Canvas backend, owned by sumi — *DONE*
-- =backends/canvas/= is a standalone, dependency-free Canvas-2D backend that
-  implements the vocabulary (=parse= + =CanvasBackend=), so =sumi= owns the
-  web rendering path instead of borrowing the game's adapter. Electron/Tauri
-  shells consume it directly.
-- *Backend-agnostic proof*: the same captured =frame.json= renders on both the
-  native Cairo/GTK4 backend and this Canvas backend. =node --test= drives the real
-  backend against a recording mock and asserts the draw calls (3 passing), incl.
-  sub-region + scaled blits via 9-arg =drawImage=. =examples/canvas-demo.html=
-  renders it in a real browser canvas.
-- The host's backend selection is encoded once in =sumi_core::BackendKind=
-  (=Skia=/=Cairo=/=Canvas=, with =from_name= / =from_env=). Both backends exist, so
-  a shell just resolves the kind at startup; a program never sees it.
-
-** Phase 3 — Tauri shell — *DONE*
-- =shells/tauri-app/= is a thin Tauri (Rust) shell that hosts the Canvas backend
-  in a WebView — the Tauri counterpart of the Electron shell, with no drawing
-  logic of its own. =build.rs= vendors =backends/canvas/src= + =frame.json= into
-  =dist/=; the frontend renders the captured frame with the unchanged backend.
-- Standalone crate (own =[workspace]=, excluded from the parent) so the large
-  WebView dep tree stays out of =cargo test --workspace= / CI.
-- Verified on this machine: builds against the default MSVC toolchain + WebView2
-  (no GTK), runs and opens the WebView, and auto-quits cleanly
-  (=SUMI_AUTOQUIT=1=, =RUN_EXIT=0=, no leftover process). See
-  =shells/tauri-app/README.org=.
-
-** Phase 4 — native GTK4 shell (live) — *DONE*
-- =shells/gtk4-native/= runs a *live render loop* over the command vocabulary in a
-  GTK4 window — no webview. *Model A* (command-stream / IPC): a =CommandSource=
-  yields one frame given the current input each tick; the shell renders it via the
-  Cairo backend and folds keyboard events into a =sumi_input::InputState= it
-  hands back. The =CommandSource= trait is the seam a nelisp program plugs into.
-- Two sources: =BoxDemo= (in-process stand-in — a box you move with the arrows /
-  WASD, proving the input→program→commands→render loop) and =StdinSource=
-  (=SUMI_STDIN=1=) which reads a real program's NDJSON frame stream from
-  stdin — =nelisp-program | sumi-gtk4-native=.
-- Verified: builds (GNU toolchain + MSYS2 GTK4), and =SUMI_AUTOQUIT=1=
-  scripts "hold right" for ~40 ticks — the rendered =sumi-live.png= shows the
-  box moved to the right with live Pango text; =RUN_EXIT=0=, no leftover process.
-
-** Phase 5 — companion libraries — *in progress*
-- *sumi-input* — *done*: =crates/sumi-input= (Rust core) + =backends/input=
-  (web/DOM binding). Logical buttons, an HSP-`stick`-compatible bitmask, pointer
-  state, and a shared key map mirrored between Rust and JS. Tested on both sides
-  (=cargo test -p sumi-input=, =node --test=).
-- Remaining: audio / fs / net as sibling crates/modules with backends.
-
-* Building and testing
-
-=scripts/check.sh= runs every package's tests in one shot — core + tiny-skia +
-sumi-input (default toolchain), Cairo/GTK4 (auto-selecting the Windows MSYS2 +
-GNU toolchain or system GTK4 on Linux/macOS), and the Canvas + input web bindings
-(=node --test=). It prints =ALL GREEN= on success and is the green gate the
-development loop uses.
+* Build
 
 #+begin_src sh
-  scripts/check.sh            # everything
-  SKIP_CAIRO=1 scripts/check.sh   # skip GTK4 if the toolchain isn't installed
+  emacs -Q --batch -l backends/cairo-elisp/build-live.el
 #+end_src
 
-=.github/workflows/ci.yml= mirrors this on =ubuntu-latest= (system GTK4 via
-=libgtk-4-dev=, so the default toolchain links Cairo — no MSYS2 dance in CI).
+The resulting =sumi-sprite-live.exe= is deployed by the newDTW live launcher to
+=C:/Users/kuroz/AppData/Local/Temp/sumi-sprite-live.exe=.
 
-* Setup (GTK4 on Windows)
+* Windows Setup
 
-The Cairo/GTK4 backend needs the GTK4 dev libraries *and a GNU Rust toolchain* on
-Windows — MSYS2 GTK4 is MinGW (GCC ABI), which the default MSVC toolchain cannot
-link. The working setup on this machine:
-
-#+begin_src sh
-  # 1. GTK4 via MSYS2
-  pacman -S --needed mingw-w64-x86_64-gtk4 mingw-w64-x86_64-pkgconf
-  # 2. GNU Rust toolchain (MSVC cannot link MinGW libs)
-  rustup toolchain install stable-x86_64-pc-windows-gnu
-  # 3. build/run with mingw64 on PATH + PKG_CONFIG_PATH
-  PKG_CONFIG_PATH=/c/msys64/mingw64/lib/pkgconfig PATH="/c/msys64/mingw64/bin:$PATH" \
-    cargo +stable-x86_64-pc-windows-gnu run -p sumi-cairo --bin sumi-window
-#+end_src
-
-The pure-Rust =sumi-skia= backend has *no* such requirement — it builds and
-renders a PNG on the default toolchain (=cargo run -p sumi-skia=), so the
-vocabulary can be exercised anywhere. Linux GTK4: =apt install libgtk-4-dev=
-(MSVC alternative on Windows: gvsbuild). gvsbuild is the MSVC alternative.
+The AOT renderer links against GTK4 libraries from MSYS2. The build expects
+=pkg-config= and =gcc= in =C:/msys64/mingw64/bin= unless =MINGW_BIN= overrides it.
